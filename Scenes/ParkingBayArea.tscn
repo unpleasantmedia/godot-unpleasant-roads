@@ -1,0 +1,15 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://addons/unpleasant_roads/Core/ParkingBayArea.cs" id="1_area"]
+
+[sub_resource type="StandardMaterial3D" id="EdgeLine"]
+shading_mode = 0
+no_depth_test = true
+albedo_color = Color(1, 0.75, 0.2, 1)
+
+[node name="ParkingBayArea" type="Node3D"]
+script = ExtResource("1_area")
+
+[node name="Edge" type="MeshInstance3D" parent="."]
+material_override = SubResource("EdgeLine")
+cast_shadow = 0

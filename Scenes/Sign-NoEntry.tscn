@@ -1,0 +1,32 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="PackedScene" path="res://addons/unpleasant_roads/Scenes/Sign.tscn" id="1_base"]
+
+[sub_resource type="StandardMaterial3D" id="Red"]
+albedo_color = Color(0.78, 0.07, 0.07, 1)
+roughness = 0.6
+
+[sub_resource type="CylinderMesh" id="Disc"]
+material = SubResource("Red")
+top_radius = 0.33
+bottom_radius = 0.33
+height = 0.02
+radial_segments = 32
+
+[sub_resource type="StandardMaterial3D" id="White"]
+albedo_color = Color(0.95, 0.95, 0.95, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="Bar"]
+material = SubResource("White")
+size = Vector3(0.44, 0.1, 0.02)
+
+[node name="Sign-NoEntry" instance=ExtResource("1_base")]
+
+[node name="Disc" type="MeshInstance3D" parent="Face"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("Disc")
+
+[node name="Bar" type="MeshInstance3D" parent="Face"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.008)
+mesh = SubResource("Bar")

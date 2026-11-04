@@ -1,0 +1,14 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://bsd63ylq36o02"]
+
+[ext_resource type="Texture2D" uid="uid://dejt5gj1s6hto" path="res://addons/unpleasant_roads/Textures/Road-Asphalt.png" id="1_albedo"]
+[ext_resource type="Texture2D" uid="uid://c6s5501o0n020" path="res://addons/unpleasant_roads/Textures/Road-Asphalt-Normal.png" id="2_normal"]
+
+[resource]
+resource_name = "Road-Asphalt"
+albedo_texture = ExtResource("1_albedo")
+metallic_specular = 0.3
+roughness = 0.85
+normal_enabled = true
+normal_scale = 0.6
+normal_texture = ExtResource("2_normal")
+texture_filter = 5

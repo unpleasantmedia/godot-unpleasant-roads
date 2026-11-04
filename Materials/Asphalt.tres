@@ -1,0 +1,7 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://pxgct05sl6hg"]
+
+[resource]
+resource_name = "Asphalt"
+albedo_color = Color(0.2, 0.19, 0.18, 1)
+metallic_specular = 0.2
+roughness = 0.95

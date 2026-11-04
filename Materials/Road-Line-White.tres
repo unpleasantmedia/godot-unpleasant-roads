@@ -1,0 +1,6 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[resource]
+resource_name = "Road-Line-White"
+albedo_color = Color(0.93, 0.92, 0.89, 1)
+roughness = 0.7

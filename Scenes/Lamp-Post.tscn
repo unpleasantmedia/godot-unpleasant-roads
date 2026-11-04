@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://do4cl665tj7rh"]
+
+[ext_resource type="PackedScene" uid="uid://bxe7rhaaj722x" path="res://addons/unpleasant_roads/Meshes/Lamp-Post.glb" id="1_model"]
+
+[sub_resource type="BoxShape3D" id="Box0"]
+size = Vector3(0.24, 5, 0.24)
+
+[node name="Lamp-Post" type="Node3D" unique_id=1042034333]
+editor_description = "An outside prop, made by tools/make_prop_scenes.py from its model."
+
+[node name="Model" parent="." unique_id=1338842436 instance=ExtResource("1_model")]
+
+[node name="Body" type="StaticBody3D" parent="." unique_id=1472527827]
+
+[node name="Shape0" type="CollisionShape3D" parent="Body" unique_id=1592945790]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+shape = SubResource("Box0")
+
+[node name="Light" type="SpotLight3D" parent="." unique_id=1355466415 groups=["street_lamps"]]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 4.7, 1.2)
+shadow_enabled = true
+distance_fade_enabled = true
+distance_fade_begin = 40.0
+distance_fade_shadow = 15.0
+distance_fade_length = 10.0
+shadow_caster_mask = 4294967281
+spot_range = 12.0

@@ -1,0 +1,8 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[resource]
+resource_name = "Concrete"
+cull_mode = 2
+albedo_color = Color(0.725, 0.725, 0.682, 1)
+metallic_specular = 0.15
+roughness = 0.9

@@ -1,0 +1,27 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://addons/unpleasant_roads/Scenes/Sign.tscn" id="1_base"]
+
+[sub_resource type="StandardMaterial3D" id="Red"]
+albedo_color = Color(0.78, 0.07, 0.07, 1)
+roughness = 0.6
+
+[sub_resource type="CylinderMesh" id="Plate"]
+material = SubResource("Red")
+top_radius = 0.36
+bottom_radius = 0.36
+height = 0.02
+radial_segments = 8
+
+[node name="Sign-Stop" instance=ExtResource("1_base")]
+
+[node name="Plate" type="MeshInstance3D" parent="Face"]
+transform = Transform3D(0.92388, 0, 0.38268, 0.38268, 0, -0.92388, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("Plate")
+
+[node name="Label" type="Label3D" parent="Face"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.015)
+pixel_size = 0.004
+text = "STOP"
+font_size = 64
+outline_size = 0

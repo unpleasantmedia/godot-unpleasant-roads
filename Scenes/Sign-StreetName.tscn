@@ -1,0 +1,28 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://addons/unpleasant_roads/Scenes/Sign.tscn" id="1_base"]
+
+[sub_resource type="StandardMaterial3D" id="Green"]
+albedo_color = Color(0.05, 0.36, 0.2, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="Plate"]
+material = SubResource("Green")
+size = Vector3(1.4, 0.26, 0.02)
+
+[node name="Sign-StreetName" instance=ExtResource("1_base")]
+Text = "Street"
+FitsLetters = 14
+
+[node name="Face" parent="." index="1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.75, 0.05)
+
+[node name="Plate" type="MeshInstance3D" parent="Face"]
+mesh = SubResource("Plate")
+
+[node name="Label" type="Label3D" parent="Face"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.012)
+pixel_size = 0.004
+text = "Street"
+font_size = 44
+outline_size = 0

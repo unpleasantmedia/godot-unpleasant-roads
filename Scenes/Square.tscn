@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://addons/unpleasant_roads/Scenes/ParkingLot.tscn" id="1_lot"]
+[ext_resource type="Script" path="res://addons/unpleasant_roads/Core/Square.cs" id="2_square"]
+
+[node name="Square" instance=ExtResource("1_lot")]
+script = ExtResource("2_square")

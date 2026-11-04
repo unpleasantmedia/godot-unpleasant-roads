@@ -1,0 +1,25 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://addons/unpleasant_roads/Scenes/Sign.tscn" id="1_base"]
+
+[sub_resource type="StandardMaterial3D" id="Blue"]
+albedo_color = Color(0.06, 0.25, 0.6, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="Plate"]
+material = SubResource("Blue")
+size = Vector3(0.9, 0.3, 0.02)
+
+[node name="Sign-OneWay" instance=ExtResource("1_base")]
+Text = "ONE WAY"
+FitsLetters = 20
+
+[node name="Plate" type="MeshInstance3D" parent="Face"]
+mesh = SubResource("Plate")
+
+[node name="Label" type="Label3D" parent="Face"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.012)
+pixel_size = 0.004
+text = "ONE WAY"
+font_size = 48
+outline_size = 0

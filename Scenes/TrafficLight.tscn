@@ -1,0 +1,107 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://addons/unpleasant_roads/Core/TrafficLight.cs" id="1_script"]
+
+[sub_resource type="StandardMaterial3D" id="Metal"]
+albedo_color = Color(0.3, 0.31, 0.33, 1)
+metallic = 0.5
+roughness = 0.5
+
+[sub_resource type="CylinderMesh" id="PoleMesh"]
+material = SubResource("Metal")
+top_radius = 0.06
+bottom_radius = 0.07
+height = 4.0
+radial_segments = 12
+
+[sub_resource type="StandardMaterial3D" id="HeadMaterial"]
+albedo_color = Color(0.08, 0.08, 0.09, 1)
+roughness = 0.7
+
+[sub_resource type="BoxMesh" id="HeadMesh"]
+material = SubResource("HeadMaterial")
+size = Vector3(0.34, 0.95, 0.26)
+
+[sub_resource type="StandardMaterial3D" id="Dim"]
+albedo_color = Color(0.16, 0.16, 0.17, 1)
+roughness = 0.3
+
+[sub_resource type="CylinderMesh" id="LampMesh"]
+material = SubResource("Dim")
+top_radius = 0.11
+bottom_radius = 0.11
+height = 0.04
+radial_segments = 16
+
+[sub_resource type="StandardMaterial3D" id="RedLit"]
+albedo_color = Color(1, 0.12, 0.08, 1)
+emission_enabled = true
+emission = Color(1, 0.12, 0.08, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="CylinderMesh" id="RedMesh"]
+material = SubResource("RedLit")
+top_radius = 0.105
+bottom_radius = 0.105
+height = 0.042
+radial_segments = 16
+
+[sub_resource type="StandardMaterial3D" id="AmberLit"]
+albedo_color = Color(1, 0.62, 0.05, 1)
+emission_enabled = true
+emission = Color(1, 0.62, 0.05, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="CylinderMesh" id="AmberMesh"]
+material = SubResource("AmberLit")
+top_radius = 0.105
+bottom_radius = 0.105
+height = 0.042
+radial_segments = 16
+
+[sub_resource type="StandardMaterial3D" id="GreenLit"]
+albedo_color = Color(0.1, 1, 0.35, 1)
+emission_enabled = true
+emission = Color(0.1, 1, 0.35, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="CylinderMesh" id="GreenMesh"]
+material = SubResource("GreenLit")
+top_radius = 0.105
+bottom_radius = 0.105
+height = 0.042
+radial_segments = 16
+
+[node name="TrafficLight" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="Pole" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0)
+mesh = SubResource("PoleMesh")
+
+[node name="Head" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.1, 0.12)
+mesh = SubResource("HeadMesh")
+
+[node name="Red" type="MeshInstance3D" parent="Head"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.28, 0.13)
+mesh = SubResource("LampMesh")
+
+[node name="Lit" type="MeshInstance3D" parent="Head/Red"]
+mesh = SubResource("RedMesh")
+
+[node name="Amber" type="MeshInstance3D" parent="Head"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0.13)
+mesh = SubResource("LampMesh")
+
+[node name="Lit" type="MeshInstance3D" parent="Head/Amber"]
+visible = false
+mesh = SubResource("AmberMesh")
+
+[node name="Green" type="MeshInstance3D" parent="Head"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, -0.28, 0.13)
+mesh = SubResource("LampMesh")
+
+[node name="Lit" type="MeshInstance3D" parent="Head/Green"]
+visible = false
+mesh = SubResource("GreenMesh")

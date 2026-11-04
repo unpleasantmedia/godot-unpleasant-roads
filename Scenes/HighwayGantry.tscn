@@ -1,0 +1,88 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://addons/unpleasant_roads/Core/HighwayGantry.cs" id="1_script"]
+
+[sub_resource type="StandardMaterial3D" id="Metal"]
+albedo_color = Color(0.6, 0.62, 0.65, 1)
+metallic = 0.6
+roughness = 0.45
+
+[sub_resource type="CylinderMesh" id="PostMesh"]
+material = SubResource("Metal")
+top_radius = 0.18
+bottom_radius = 0.22
+height = 8.0
+radial_segments = 12
+
+[sub_resource type="BoxMesh" id="BeamMesh"]
+material = SubResource("Metal")
+size = Vector3(1, 0.5, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="Green"]
+albedo_color = Color(0.05, 0.36, 0.2, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="MainMesh"]
+material = SubResource("Green")
+size = Vector3(4.5, 1.8, 0.08)
+
+[sub_resource type="BoxMesh" id="ExitMesh"]
+material = SubResource("Green")
+size = Vector3(3.6, 1.8, 0.08)
+
+[sub_resource type="StandardMaterial3D" id="Yellow"]
+albedo_color = Color(0.95, 0.75, 0.1, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="TabMesh"]
+material = SubResource("Yellow")
+size = Vector3(1.2, 0.45, 0.09)
+
+[node name="HighwayGantry" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="LeftPost" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 3.4, 0)
+mesh = SubResource("PostMesh")
+
+[node name="RightPost" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 3.4, 0)
+mesh = SubResource("PostMesh")
+
+[node name="Beam" type="MeshInstance3D" parent="."]
+transform = Transform3D(20, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7.1, 0)
+mesh = SubResource("BeamMesh")
+
+[node name="MainPanel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6.6, 0.32)
+mesh = SubResource("MainMesh")
+
+[node name="Label" type="Label3D" parent="MainPanel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.05)
+pixel_size = 0.01
+text = "Highway"
+font_size = 48
+outline_size = 0
+
+[node name="ExitPanel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 6.6, 0.32)
+mesh = SubResource("ExitMesh")
+
+[node name="Tab" type="MeshInstance3D" parent="ExitPanel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.1, 1.1, 0)
+mesh = SubResource("TabMesh")
+
+[node name="TabLabel" type="Label3D" parent="ExitPanel/Tab"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.05)
+pixel_size = 0.01
+modulate = Color(0.05, 0.05, 0.05, 1)
+text = "EXIT"
+font_size = 28
+outline_size = 0
+
+[node name="Label" type="Label3D" parent="ExitPanel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.05)
+pixel_size = 0.01
+text = "Exit"
+font_size = 40
+outline_size = 0

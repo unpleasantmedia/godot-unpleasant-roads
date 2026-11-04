@@ -1,0 +1,44 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="PackedScene" path="res://addons/unpleasant_roads/Scenes/Sign.tscn" id="1_base"]
+
+[sub_resource type="StandardMaterial3D" id="Red"]
+albedo_color = Color(0.78, 0.07, 0.07, 1)
+roughness = 0.6
+
+[sub_resource type="CylinderMesh" id="Ring"]
+material = SubResource("Red")
+top_radius = 0.33
+bottom_radius = 0.33
+height = 0.02
+radial_segments = 32
+
+[sub_resource type="StandardMaterial3D" id="White"]
+albedo_color = Color(0.95, 0.95, 0.95, 1)
+roughness = 0.6
+
+[sub_resource type="CylinderMesh" id="Disc"]
+material = SubResource("White")
+top_radius = 0.26
+bottom_radius = 0.26
+height = 0.02
+radial_segments = 32
+
+[node name="Sign-SpeedLimit" instance=ExtResource("1_base")]
+Text = "50"
+
+[node name="Ring" type="MeshInstance3D" parent="Face"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("Ring")
+
+[node name="Disc" type="MeshInstance3D" parent="Face"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0.006)
+mesh = SubResource("Disc")
+
+[node name="Label" type="Label3D" parent="Face"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.02)
+pixel_size = 0.004
+modulate = Color(0.05, 0.05, 0.05, 1)
+text = "50"
+font_size = 80
+outline_size = 0
