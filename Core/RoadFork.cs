@@ -439,7 +439,8 @@ public partial class RoadFork : Node3D
         // Guard rails (not carried: a viaduct's walls are its own): along both outer edges, and along each group's
         // inner edge from where they part, as fences of that kind, a little in on the shoulders.
         _rails ??= AddInternal(new Node3D { Name = "Rails" });
-        foreach (var old in _rails.GetChildren())
+        // (Internal ones too: its gore tip is.)
+        foreach (var old in _rails.GetChildren(true))
         {
             _rails.RemoveChild(old);
             old.QueueFree();

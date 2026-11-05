@@ -23,6 +23,12 @@ public partial class RoadNetwork : Node3D
     /// <summary>The metadata a road or junction keeps what its ground was last fitted to in.</summary>
     private static readonly StringName FittedMeta = "road_fitted";
 
+    /// <summary>Where a road lay when last fitted, as points along it (x and z, and in y how far from each its ground reached): the ground only it may have moved.</summary>
+    private static readonly StringName FittedLineMeta = "road_fitted_line";
+
+    /// <summary>How far apart those points are, in metres.</summary>
+    private const float FittedLineStep = 8f;
+
     /// <summary>How long after an edit the road tool's fit waits, for roads and junctions to have rebuilt round it.</summary>
     private const double FitDelay = 0.25;
 
@@ -108,6 +114,32 @@ public partial class RoadNetwork : Node3D
 
     [ExportToolButton("Refit Terrain to All Roads", Icon = "Reload")]
     public Callable RefitTerrainButton => Callable.From(() => FitTerrain(true));
+
+    /// <summary>
+    /// Forgets the ground as it was before roads were fitted to it, for when the terrain has been
+    /// replaced: heights kept from the old one must never be put back on the new. The next fit keeps
+    /// them afresh. One step to undo in the editor.
+    /// </summary>
+    [ExportToolButton("Forget Kept Ground", Icon = "Clear")]
+    public Callable ForgetGroundButton => Callable.From(ForgetGround);
+
+    public void ForgetGround()
+    {
+        var before = GroundOriginalPoints;
+        var none = System.Array.Empty<Vector3>();
+#if TOOLS
+        if (Engine.IsEditorHint())
+        {
+            var undo = EditorInterface.Singleton.GetEditorUndoRedo();
+            undo.CreateAction("Forget the kept ground");
+            undo.AddDoMethod(this, MethodName.KeepGroundOriginal, none);
+            undo.AddUndoMethod(this, MethodName.KeepGroundOriginal, before);
+            undo.CommitAction();
+            return;
+        }
+#endif
+        KeepGroundOriginal(none);
+    }
 
     [ExportToolButton("Save Terrain", Icon = "Save")]
     public Callable SaveTerrainButton => Callable.From(SaveTerrain);
@@ -1065,6 +1097,15 @@ public partial class RoadNetwork : Node3D
             }
             foreach (var part in changed)
             {
+                if (part is Road fittedRoad)
+                {
+                    undo.AddDoMethod(fittedRoad, GodotObject.MethodName.SetMeta, FittedLineMeta, FittedLine(fittedRoad, spacing));
+                    if (fittedRoad.HasMeta(FittedLineMeta))
+                        undo.AddUndoMethod(fittedRoad, GodotObject.MethodName.SetMeta, FittedLineMeta, fittedRoad.GetMeta(FittedLineMeta));
+                    else
+                        undo.AddUndoMethod(fittedRoad, GodotObject.MethodName.RemoveMeta, FittedLineMeta);
+                }
+
                 undo.AddDoMethod(part, GodotObject.MethodName.SetMeta, FittedMeta, keys[part]);
                 if (part.HasMeta(FittedMeta))
                     undo.AddUndoMethod(part, GodotObject.MethodName.SetMeta, FittedMeta, part.GetMeta(FittedMeta));
@@ -1081,23 +1122,63 @@ public partial class RoadNetwork : Node3D
         if (holesAfter.Length > 0)
             SetHoles(holesAfter);
         foreach (var part in changed)
+        {
             part.SetMeta(FittedMeta, keys[part]);
+            if (part is Road road)
+                road.SetMeta(FittedLineMeta, FittedLine(road, spacing));
+        }
+    }
+
+    /// <summary>Where a road lies now, for the next fit to tell which ground it moved (see <see cref="FittedLineMeta"/>).</summary>
+    private Vector3[] FittedLine(Road road, float spacing)
+    {
+        var line = new List<Vector3>();
+        foreach (var stretch in road.FootprintStretches())
+        {
+            var reach = System.MathF.Max(System.MathF.Abs(stretch.Left), System.MathF.Abs(stretch.Right)) + road.CrossSection.BankWidth + Margin + Falloff + spacing + FittedLineStep;
+            System.Numerics.Vector3? last = null;
+            for (var i = 0; i < stretch.Frames.Count; i++)
+            {
+                var at = stretch.Frames[i].Position;
+                if (last is { } was && i < stretch.Frames.Count - 1 && System.Numerics.Vector3.Distance(was, at) < FittedLineStep)
+                    continue;
+                line.Add(new Vector3(at.X, reach, at.Z));
+                last = at;
+            }
+        }
+
+        return line.ToArray();
     }
 
     /// <summary>
-    /// The grid points round the changed parts that fitting once moved and that nothing wants now
-    /// (not they, nor any other road, junction or lot reaching there): each with its height as it
-    /// was before, to be put back.
+    /// The grid points round where the changed roads lay when last fitted that fitting once moved and
+    /// that nothing wants now (not they, nor any other road, junction or lot reaching there): each with
+    /// its height as it was before, to be put back. Only there: a height kept for anywhere else was
+    /// not moved by these roads, and may be of ground since replaced.
     /// </summary>
     private IEnumerable<((int X, int Z) At, float Height)> Released(IReadOnlyList<Node3D> changed, Dictionary<(int X, int Z), GroundTarget> wanted,
         Dictionary<(int X, int Z), float> originals, float spacing)
     {
-        // Where the changed roads reach (their viaducts and tunnels too), as far out as fitting does.
         var reach = Margin + Falloff + spacing;
-        var area = RoadFootprint.Bounds(changed.OfType<Road>().SelectMany(r => r.FootprintStretches()))?.Grow(reach);
-        if (area is not { } bounds || originals.Count == 0)
+        var line = changed.OfType<Road>().Where(r => r.HasMeta(FittedLineMeta)).SelectMany(r => r.GetMeta(FittedLineMeta).AsVector3Array()).ToArray();
+        if (line.Length == 0 || originals.Count == 0)
             yield break;
-        var candidates = originals.Keys.Where(k => !wanted.ContainsKey(k) && bounds.Contains(new System.Numerics.Vector3(k.X * spacing, 0f, k.Z * spacing))).ToHashSet();
+        var bounds = new FlatBounds(
+            new System.Numerics.Vector2(line.Min(p => p.X - p.Y), line.Min(p => p.Z - p.Y)),
+            new System.Numerics.Vector2(line.Max(p => p.X + p.Y), line.Max(p => p.Z + p.Y)));
+        bool Near(float x, float z)
+        {
+            foreach (var p in line)
+            {
+                if ((p.X - x) * (p.X - x) + (p.Z - z) * (p.Z - z) <= p.Y * p.Y)
+                    return true;
+            }
+
+            return false;
+        }
+
+        var candidates = originals.Keys.Where(k => !wanted.ContainsKey(k)
+            && bounds.Contains(new System.Numerics.Vector3(k.X * spacing, 0f, k.Z * spacing)) && Near(k.X * spacing, k.Z * spacing)).ToHashSet();
         if (candidates.Count == 0)
             yield break;
 

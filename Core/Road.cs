@@ -90,8 +90,9 @@ public partial class Road : Node3D
     private Material? _yellowLineMaterial;
     private Material? _bankMaterial;
     private Material? _structureMaterial;
-    private Node3D? _startJunction;
-    private Node3D? _endJunction;
+    // By id, not by reference: Godot saves a script's fields when it reloads it, and a reference to a junction freed since throws.
+    private ulong _startJunction;
+    private ulong _endJunction;
     private bool _rebuildQueued;
     private StaticBody3D? _body;
 
@@ -352,8 +353,8 @@ public partial class Road : Node3D
     /// A junction an end is joined to, if it is still there: one taken out of the scene (deleted, or
     /// undone) leaves that end loose, and saves as none, until it comes back.
     /// </summary>
-    private Node3D? Joined(Node3D? junction) =>
-        IsInstanceValid(junction) && Root(this) == Root(junction!) ? junction : null;
+    private Node3D? Joined(ulong id) =>
+        InstanceFromId(id) is Node3D junction && Root(this) == Root(junction) ? junction : null;
 
     /// <summary>The topmost node above one: out of the tree, two can only point at each other through a shared one.</summary>
     private static Node Root(Node node)
@@ -531,7 +532,8 @@ public partial class Road : Node3D
             return;
         _barriersKey = key;
         _barriers ??= AddInternal(new Node3D { Name = "Barriers" });
-        foreach (var old in _barriers.GetChildren())
+        // (Internal ones too: its gore tips are.)
+        foreach (var old in _barriers.GetChildren(true))
         {
             _barriers.RemoveChild(old);
             old.QueueFree();
@@ -878,7 +880,7 @@ public partial class Road : Node3D
         var structures = Structures;
         var rampSpecs = ramps.Select(r => r.Spec).ToList();
         var structureSpecs = StructureSpecs();
-        var key = BuildKey(frames, fullFrames, rampSpecs, structureSpecs, curvePoints.Count);
+        var key = BuildKey(frames, fullFrames, structureSpecs, curvePoints.Count);
         var toLocal = GlobalTransform.AffineInverse();
 
         // While its points are being dragged about in the editor, only the pieces round the change
@@ -886,19 +888,26 @@ public partial class Road : Node3D
         // the dragging stops; otherwise all of it builds.
         var inPart = (Engine.IsEditorHint() || PartOutsideEditor) && !_wholeDue && key == _builtKey && BuildPart(curvePoints, pointsAt, frames, rampSpecs, structureSpecs, toLocal);
         var solids = inPart ? null : BuildWhole(frames, rampSpecs, structureSpecs, toLocal);
+        // Only its ramps changed: its viaducts and tunnels are as they were, until it settles.
+        var sameLine = inPart && _builtPoints is not null && _builtPoints.SequenceEqual(curvePoints);
         _builtPoints = curvePoints;
         _builtPointsAt = pointsAt;
         _builtKey = key;
+        _builtRamps = rampSpecs;
 
-        ShowTunnelMask();
-        var inside = new MeshData();
-        var concrete = RoadStructureBuilder.Build(frames, CrossSection, structureSpecs, GroundAt, (at, half) => Network?.RoadUnder(at, half) == true, inside);
-        var concreteMesh = new ArrayMesh();
-        AddSurface(concreteMesh, concrete, _structureMaterial ?? DefaultMaterial("Concrete"), toLocal);
-        AddSurface(concreteMesh, inside, DefaultMaterial("Tunnel-Inside"), toLocal);
-        concrete.Append(inside);
-        AddTunnelBars(concreteMesh, toLocal);
-        _concrete.Mesh = concreteMesh.GetSurfaceCount() > 0 ? concreteMesh : null;
+        MeshData? concrete = null;
+        if (!sameLine)
+        {
+            ShowTunnelMask();
+            var inside = new MeshData();
+            concrete = RoadStructureBuilder.Build(frames, CrossSection, structureSpecs, GroundAt, (at, half) => Network?.RoadUnder(at, half) == true, inside);
+            var concreteMesh = new ArrayMesh();
+            AddSurface(concreteMesh, concrete, _structureMaterial ?? DefaultMaterial("Concrete"), toLocal);
+            AddSurface(concreteMesh, inside, DefaultMaterial("Tunnel-Inside"), toLocal);
+            concrete.Append(inside);
+            AddTunnelBars(concreteMesh, toLocal);
+            _concrete.Mesh = concreteMesh.GetSurfaceCount() > 0 ? concreteMesh : null;
+        }
 
         // Its ramps' own roads follow where the ramps now end.
         var roads = ramps.Count > 0 ? Network?.Roads : null;
@@ -932,7 +941,7 @@ public partial class Road : Node3D
                 _body.AddChild(new CollisionShape3D { Shape = new ConcavePolygonShape3D { Data = faces } });
             }
 
-            SetConcreteCollision(concrete, toLocal);
+            SetConcreteCollision(concrete!, toLocal);
 
             PutUpSpeedSigns(frames, structureSpecs);
             PutUpGantries(frames);
@@ -1030,12 +1039,16 @@ public partial class Road : Node3D
     /// <summary>Its surface, lines and banks, piece by piece along it: from and to how far along, and the mesh.</summary>
     private readonly List<(float From, float To, MeshInstance3D Mesh)> _pieces = new();
 
+    /// <summary>What marks a mesh as one of its pieces: its name will not do, as a second of a name is given another, by Godot.</summary>
+    private static readonly StringName PieceMeta = "road_piece";
+
     private MeshInstance3D? _concrete;
 
     /// <summary>Its points, how far along it each was, and everything else its shape hangs on, as last built: to tell what a change touched.</summary>
     private List<CurvePoint>? _builtPoints;
     private float[]? _builtPointsAt;
     private string? _builtKey;
+    private List<RampSpec>? _builtRamps;
 
     /// <summary>Whether it is to be built whole next time, not in part: it has not been yet, or has only been in part and has been left alone since.</summary>
     private bool _wholeDue = true;
@@ -1048,12 +1061,12 @@ public partial class Road : Node3D
 
     /// <summary>
     /// Everything but where its points are that its pieces hang on: how it is cut back at each end,
-    /// what it is like across, its ramps and structures, what its ends meet, its materials. A
-    /// change to any of them builds it whole.
+    /// what it is like across, its structures, what its ends meet, its materials. A change to any
+    /// of them builds it whole. (Not its ramps: see <see cref="BuildRampPieces"/>.)
     /// </summary>
-    private string BuildKey(IReadOnlyList<RoadFrame> frames, IReadOnlyList<RoadFrame> fullFrames, IReadOnlyList<RampSpec> ramps, IReadOnlyList<StructureSpec> structures, int points) =>
+    private string BuildKey(IReadOnlyList<RoadFrame> frames, IReadOnlyList<RoadFrame> fullFrames, IReadOnlyList<StructureSpec> structures, int points) =>
         string.Join("|", _closed, CrossSection, System.MathF.Round(frames[0].Distance, 3), System.MathF.Round(fullFrames[^1].Distance - frames[^1].Distance, 3),
-            string.Join(";", ramps), string.Join(";", structures), StartJunction is null, EndJunction is null, points, string.Join(";", Openings(frames)),
+            string.Join(";", structures), StartJunction is null, EndJunction is null, points, string.Join(";", Openings(frames)),
             _surfaceMaterial?.GetInstanceId(), _whiteLineMaterial?.GetInstanceId(), _yellowLineMaterial?.GetInstanceId(), _bankMaterial?.GetInstanceId());
 
     /// <summary>
@@ -1148,8 +1161,16 @@ public partial class Road : Node3D
     {
         if (_builtPoints is null || _builtPointsAt is null || _builtPoints.Count != points.Count || _pieces.Count == 0)
             return false;
+        if (_builtRamps is null)
+            return false;
+        // The ramps that changed, as they were and as they are: where they lay needs building again too.
+        var rampsChanged = _builtRamps.Except(ramps).Concat(ramps.Except(_builtRamps)).ToList();
         var changed = Enumerable.Range(0, points.Count).Where(i => !_builtPoints[i].Equals(points[i])).ToList();
+        // Nothing that shapes it changed: only its own points turned to face along it after the last build, say. While it is
+        // being dragged that is nothing to build; it builds whole when it settles anyway.
         if (changed.Count == 0)
+            return rampsChanged.Count > 0 ? BuildRampPieces(rampsChanged, frames, ramps, structures, toLocal) : _settling;
+        if (rampsChanged.Count > 0)
             return false;
 
         // A point's place shapes the curve from two points before it to one after it (the ways
@@ -1194,6 +1215,26 @@ public partial class Road : Node3D
         return true;
     }
 
+    /// <summary>Builds again only the pieces along ramps that changed, each the same stretch as before; whether there were any.</summary>
+    private bool BuildRampPieces(List<RampSpec> changed, IReadOnlyList<RoadFrame> frames, IReadOnlyList<RampSpec> ramps, IReadOnlyList<StructureSpec> structures, Transform3D toLocal)
+    {
+        var along = ToBuild(frames);
+        var any = false;
+        for (var i = 0; i < _pieces.Count; i++)
+        {
+            var (from, to, old) = _pieces[i];
+            if (!changed.Any(r => r.End > from && r.Start < to))
+                continue;
+            RemoveChild(old);
+            old.QueueFree();
+            BuildPiece(along, from, to, ramps, structures, toLocal, out var mesh);
+            _pieces[i] = (from, to, mesh);
+            any = true;
+        }
+
+        return any;
+    }
+
     /// <summary>Builds its surface, lines and banks from one distance along it to another as a mesh of its own.</summary>
     private RoadMeshes BuildPiece(IReadOnlyList<RoadFrame> along, float from, float to, IReadOnlyList<RampSpec> ramps, IReadOnlyList<StructureSpec> structures, Transform3D toLocal,
         out MeshInstance3D mesh)
@@ -1212,6 +1253,7 @@ public partial class Road : Node3D
         AddSurface(arrays, meshes.Banks, _bankMaterial ?? DefaultMaterial("Asphalt"), toLocal);
         AddSurface(arrays, meshes.Sidewalks, DefaultMaterial("Sidewalk"), toLocal);
         mesh = AddInternal(new MeshInstance3D { Name = "Piece", Mesh = arrays });
+        mesh.SetMeta(PieceMeta, true);
         return meshes;
     }
 
@@ -1347,6 +1389,7 @@ public partial class Road : Node3D
 
         mesh.SurfaceSetMaterial(0, _surfaceMaterial ?? DefaultMaterial(PathMaterial(_pathKind)));
         var piece = kept ?? AddInternal(new MeshInstance3D { Name = "Piece", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+        piece.SetMeta(PieceMeta, true);
         // A footpath: not drawn from far off (see DrawDistance).
         RoadDrawDistance.LimitSmall(piece);
         if (piece.Mesh != mesh)
@@ -1443,7 +1486,7 @@ public partial class Road : Node3D
     /// </summary>
     private MeshInstance3D? KeepOnePathPiece()
     {
-        var pieces = GetChildren(true).OfType<MeshInstance3D>().Where(m => m.Name.ToString().StartsWith("Piece")).ToList();
+        var pieces = GetChildren(true).OfType<MeshInstance3D>().Where(m => m.HasMeta(PieceMeta)).ToList();
         _pieces.Clear();
         foreach (var extra in pieces.Skip(1))
         {
@@ -1466,7 +1509,7 @@ public partial class Road : Node3D
 
         // And any it lost track of: the list is emptied when the editor rebuilds the scripts, the
         // pieces it held left behind, which would show under (or over) the ones built next.
-        foreach (var stale in GetChildren(true).OfType<MeshInstance3D>().Where(m => m.Name.ToString().StartsWith("Piece")).ToList())
+        foreach (var stale in GetChildren(true).OfType<MeshInstance3D>().Where(m => m.HasMeta(PieceMeta)).ToList())
         {
             RemoveChild(stale);
             stale.QueueFree();
@@ -1611,6 +1654,9 @@ public partial class Road : Node3D
         WaitToSettle();
     }
 
+    /// <summary>How often it looks whether a held mouse button has been let go, in milliseconds.</summary>
+    private const ulong HeldCheck = 100;
+
     private void WaitToSettle()
     {
         var wait = _settleAt > Godot.Time.GetTicksMsec() ? (_settleAt - Godot.Time.GetTicksMsec()) / 1000.0 : 0.0;
@@ -1619,6 +1665,9 @@ public partial class Road : Node3D
         {
             if (!IsInstanceValid(this))
                 return;
+            // Still being dragged: not until it is let go.
+            if (IsInsideTree() && Engine.IsEditorHint() && Input.IsMouseButtonPressed(MouseButton.Left))
+                _settleAt = Godot.Time.GetTicksMsec() + HeldCheck;
             if (IsInsideTree() && Godot.Time.GetTicksMsec() < _settleAt)
             {
                 WaitToSettle();
@@ -1822,6 +1871,9 @@ public partial class Road : Node3D
     /// <summary>How far a lamp post stands in from the curb on a sidewalk, in metres.</summary>
     private const float LampIn = 0.6f;
 
+    /// <summary>How far back from the middle of the shoulder a lamp post stands, with no sidewalk, in metres.</summary>
+    private const float LampBack = 0.5f;
+
     /// <summary>How far from its ends (and the junctions there) its lamp posts keep, and from a parking lot's entrance, in metres.</summary>
     private const float LampClearOfEnds = 10f;
     private const float LampClearOfOpenings = 2f;
@@ -1864,6 +1916,17 @@ public partial class Road : Node3D
 
         var bands = CrossSection.Bands();
         var openings = Openings(frames);
+        var section = CrossSection;
+        var ramps = Ramps.Select(r => r.Spec).ToList();
+        // A ramp's lane there, or it not yet far enough away for the road's edge to stand clear: as for the road's rail.
+        bool RampAt(bool onLeft, float d)
+        {
+            var (side, sign) = onLeft ? (RoadSide.Left, -1f) : (RoadSide.Right, 1f);
+            var edge = BarrierOffset(onLeft ? BarrierSide.Left : BarrierSide.Right);
+            return ramps.Any(r => r.Side == side && d > r.Start - LampClearOfOpenings && d < r.End + LampClearOfOpenings
+                && new[] { d - LampClearOfOpenings, d, d + LampClearOfOpenings }.Any(x => !RampClear(r, section, System.Math.Clamp(x, r.Start, r.End), edge, sign)));
+        }
+
         var (start, end) = (frames[0].Distance + (_closed ? 0f : LampClearOfEnds), frames[^1].Distance - (_closed ? _lampSpacing / 2f : LampClearOfEnds));
         var places = new List<Transform3D>();
         foreach (var (onLeft, first) in new[] { (false, 0f), (true, staggered ? _lampSpacing / 2f : 0f) })
@@ -1879,15 +1942,13 @@ public partial class Road : Node3D
             for (var k = 0; k <= count; k++)
             {
                 var distance = offset + k * _lampSpacing;
-                if (distance < start || distance > end || structures.Any(s => s.Covers(distance))
+                if (distance < start || distance > end || structures.Any(s => s.Covers(distance)) || RampAt(onLeft, distance)
                     || openings.Any(o => o.Left == onLeft && distance > o.From - LampClearOfOpenings && distance < o.To + LampClearOfOpenings))
                     continue;
                 var frame = RoadCurve.At(frames, distance);
-                // On the sidewalk by the curb; with none, out past the shoulder where the signs stand
-                // (on the shoulder's edge where the ground drops away beside it).
-                var across = onLeft
-                    ? sidewalk ? band.Right - LampIn : band.Left - RoadSignals.KerbBeside(Network?.Ground, frame, band.Left, -1f, RoadSignals.Kerb)
-                    : sidewalk ? band.Left + LampIn : band.Right + RoadSignals.KerbBeside(Network?.Ground, frame, band.Right, 1f, RoadSignals.Kerb);
+                // On the sidewalk by the curb; with none, on the shoulder, back behind where a guard rail runs.
+                var across = sidewalk ? (onLeft ? band.Right - LampIn : band.Left + LampIn)
+                    : (band.Left + band.Right) / 2f + (onLeft ? -LampBack : LampBack);
                 // Its arm out over the road: its +z towards the road's middle.
                 var inward = (onLeft ? frame.Right : -frame.Right).ToGodot() with { Y = 0f };
                 if (inward.LengthSquared() < 1e-6f)
@@ -1996,10 +2057,10 @@ public partial class Road : Node3D
         lot.QueueRebuild();
     }
 
-    private void ChangeJunction(ref Node3D? field, Node3D? value, bool start)
+    private void ChangeJunction(ref ulong field, Node3D? value, bool start)
     {
-        var old = field;
-        field = value;
+        var old = InstanceFromId(field);
+        field = value?.GetInstanceId() ?? 0;
         if (Reloading)
             return;
         // Joined to a junction, that end of it moves onto the junction (not while the scene loads,

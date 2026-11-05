@@ -135,7 +135,12 @@ public partial class RoadsPlugin
         var undo = EditorInterface.Singleton.GetEditorUndoRedo();
         var root = EditorInterface.Singleton.GetEditedSceneRoot();
         undo.CreateAction(merge ? "Add merge" : "Add fork");
-        var fork = new RoadFork { Name = merge ? "Merge" : "Fork", LeftLanes = merge ? road.ForwardLanes : lanes - 1, Length = ForkLength };
+        var forward = road.FullFrames() is { Count: >= 2 } frames ? (frames[^1].Forward.ToGodot() with { Y = 0f }).Normalized() : Vector3.Forward;
+        // The new one-lane branch is on the side clicked, and the fork gives its left lanes to the road on its left: the road
+        // drawn keeps its lanes whichever side that is.
+        var clickedRight = (at - end).Dot(new Vector3(-forward.Z, 0f, forward.X)) > 0f;
+        var keptLanes = merge ? road.ForwardLanes : lanes - 1;
+        var fork = new RoadFork { Name = merge ? "Merge" : "Fork", LeftLanes = clickedRight ? keptLanes : 1, Length = ForkLength };
         undo.AddDoMethod(network, Node.MethodName.AddChild, fork, true);
         undo.AddDoMethod(fork, Node.MethodName.SetOwner, root);
         undo.AddDoProperty(fork, Node3D.PropertyName.GlobalPosition, end);
@@ -181,7 +186,6 @@ public partial class RoadsPlugin
         undo.AddDoProperty(onward, Road.PropertyName.StartJunction, fork);
         // The other branch: out to the point clicked from the fork, or in from it to the fork. Its far end past the
         // fork's own far end (a click within the fork's length would have it double back), as far aside as clicked.
-        var forward = road.FullFrames() is { Count: >= 2 } frames ? (frames[^1].Forward.ToGodot() with { Y = 0f }).Normalized() : Vector3.Forward;
         var ahead = (at - end).Dot(forward);
         if (merge ? ahead > -(ForkLength + 20f) : ahead < ForkLength + 20f)
             at += forward * ((merge ? -(ForkLength + 30f) : ForkLength + 30f) - ahead);

@@ -83,6 +83,7 @@ public partial class ForkMake : RefCounted
     public Vector3 At;
     public float Length;
     public Road? Straight;
+    public int TrunkLanes;
     public List<(RoadPoint Point, Vector3 At, int Index)> Dropped = new();
 }
 

@@ -1507,12 +1507,6 @@ public partial class RoadsPlugin : EditorPlugin
             return;
         }
 
-        if (lanes < 2)
-        {
-            GD.PushWarning($"{what}: {road.Name} has only one lane; it needs two or more to part.");
-            return;
-        }
-
         // One way the other way (its lanes backward): turned round first, as part of the same step, so it runs the way its traffic goes.
         var turn = road.ForwardLanes == 0;
         if (turn && road.Ramps.Count > 0)
@@ -1550,7 +1544,8 @@ public partial class RoadsPlugin : EditorPlugin
             undo.AddUndoMethod(this, MethodName.TurnRound, road);
         }
 
-        var fork = new RoadFork { Name = merge ? "Merge" : "Fork", LeftLanes = lanes - 1, Length = ForkLength };
+        // The road keeps all its lanes on its straight branch (on the left); the trunk has one more, for the new branch.
+        var fork = new RoadFork { Name = merge ? "Merge" : "Fork", LeftLanes = lanes, Length = ForkLength };
         undo.AddDoMethod(network, Node.MethodName.AddChild, fork, true);
         undo.AddDoMethod(fork, Node.MethodName.SetOwner, root);
         undo.AddDoProperty(fork, Node3D.PropertyName.GlobalPosition, at);
@@ -1653,6 +1648,13 @@ public partial class RoadsPlugin : EditorPlugin
         if (straight is null)
             return;
         make.Straight = straight;
+        // Its trunk (the other part) a lane wider, for the new branch.
+        if ((make.Merge ? make.Split.Second : make.Split.Road) is { } trunk)
+        {
+            make.TrunkLanes = trunk.ForwardLanes;
+            trunk.ForwardLanes = make.TrunkLanes + 1;
+        }
+
         // A fork's straight branch, new from the split, made like the trunk in all else too.
         if (!make.Merge)
             RoadFork.Adopt(straight, make.Split.Road);
@@ -1684,6 +1686,8 @@ public partial class RoadsPlugin : EditorPlugin
         }
 
         make.Dropped.Clear();
+        if ((make.Merge ? make.Split.Second : make.Split.Road) is { } trunk)
+            trunk.ForwardLanes = make.TrunkLanes;
         RoadEdits.Unsplit(make.Split);
     }
 
