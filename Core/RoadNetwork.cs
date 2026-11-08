@@ -1422,10 +1422,15 @@ public partial class RoadNetwork : Node3D
     /// name, place and every setting kept in the scene (not metadata). The same in the editor and in play
     /// for the same level; changed by any edit to it. For telling whether its baked look is out of date.
     /// </summary>
-    public string Fingerprint()
+    public string Fingerprint() => FingerprintOf(this, ".", children: true);
+
+    /// <summary>The same of a resource kept in the scene (a material made there, say), by what is stored of it.</summary>
+    public static string ResourceFingerprint(GodotObject resource) => FingerprintOf(resource, ".", children: false);
+
+    private static string FingerprintOf(GodotObject of, string at, bool children)
     {
         var text = new System.Text.StringBuilder();
-        void Take(Node node, string path)
+        void Take(GodotObject node, string path, bool deep)
         {
             text.Append(path).Append('{');
             foreach (var property in node.GetPropertyList())
@@ -1443,11 +1448,13 @@ public partial class RoadNetwork : Node3D
             }
 
             text.Append('}');
-            foreach (var child in node.GetChildren())
-                Take(child, $"{path}/{child.Name}");
+            if (!deep || node is not Node parent)
+                return;
+            foreach (var child in parent.GetChildren())
+                Take(child, $"{path}/{child.Name}", true);
         }
 
-        Take(this, ".");
+        Take(of, at, children);
         return text.ToString().Md5Text();
     }
 

@@ -12,6 +12,14 @@ public enum StructureKind
     Tunnel,
 }
 
+/// <summary>Where a tunnel's light bars hang: in the corners of its roof by turns, in one row along the middle of its ceiling, or both.</summary>
+public enum TunnelLightRow
+{
+    Sides,
+    Centre,
+    Both,
+}
+
 /// <summary>
 /// A viaduct or tunnel over Length metres from Start along a road. A viaduct is a deck DeckDepth
 /// thick under the road, with barriers BarrierHeight high along its edges and pillars every
@@ -35,7 +43,8 @@ public readonly record struct StructureSpec(
     float LightGreen = 0.62f,
     float LightBlue = 0.25f,
     float LightEnergy = 2f,
-    float LightRange = 14f)
+    float LightRange = 14f,
+    TunnelLightRow LightRow = TunnelLightRow.Sides)
 {
     public float End => Start + Length;
 
@@ -130,8 +139,10 @@ public static class RoadStructureBuilder
     }
 
     /// <summary>
-    /// A tunnel's light bars, in the corners of its roof, along it, by turns on either side, each tilted
-    /// to face the middle of the road: their mesh, and where each is with the way it faces.
+    /// A tunnel's light bars: in the corners of its roof, along it, by turns on either side, each tilted
+    /// to face the middle of the road; and/or (<see cref="TunnelLightRow.Centre"/>, <see cref="TunnelLightRow.Both"/>)
+    /// in one row along the middle of its ceiling, LightSpacing apart, facing down. Their mesh, and
+    /// where each is with the way it faces.
     /// </summary>
     public static (MeshData Mesh, List<(Vector3 At, Vector3 Facing)> Places) TunnelBars(IReadOnlyList<RoadFrame> frames, RoadCrossSection section, IReadOnlyList<StructureSpec> structures)
     {
@@ -147,24 +158,37 @@ public static class RoadStructureBuilder
         foreach (var tunnel in structures.Where(s => s.Kind == StructureKind.Tunnel && s.LightSpacing > 0f && s.LightLength > 0f))
         {
             var (from, to) = (Math.Max(tunnel.Start, frames[0].Distance), Math.Min(tunnel.End, frames[^1].Distance));
-            var onLeft = true;
-            for (var along = from + tunnel.LightSpacing / 2f; along < to - tunnel.LightLength; along += tunnel.LightSpacing / 2f)
+            var rows = tunnel.LightRow switch
             {
-                var frame = RoadCurve.At(frames, along);
-                var at = frame.Across(onLeft ? left + inset : right - inset) + Vector3.UnitY * (tunnel.Clearance - inset);
-                var facing = Vector3.Normalize(frame.Across((left + right) / 2f) - at);
-                places.Add((at, facing));
-                var length = Vector3.Normalize(frame.Forward) * tunnel.LightLength / 2f;
-                var width = Vector3.Normalize(Vector3.Cross(facing, length)) * halfWidth;
-                var depth = facing * halfDepth;
-                Vector3 Corner(int l, int w, int d) => at + length * l + width * w + depth * d;
-                Face(mesh, Corner(-1, -1, 1), Corner(1, -1, 1), Corner(1, 1, 1), Corner(-1, 1, 1), facing);
-                Face(mesh, Corner(-1, -1, -1), Corner(1, -1, -1), Corner(1, 1, -1), Corner(-1, 1, -1), -facing);
-                Face(mesh, Corner(-1, -1, -1), Corner(1, -1, -1), Corner(1, -1, 1), Corner(-1, -1, 1), -Vector3.Normalize(width));
-                Face(mesh, Corner(-1, 1, -1), Corner(1, 1, -1), Corner(1, 1, 1), Corner(-1, 1, 1), Vector3.Normalize(width));
-                Face(mesh, Corner(-1, -1, -1), Corner(-1, 1, -1), Corner(-1, 1, 1), Corner(-1, -1, 1), -Vector3.Normalize(length));
-                Face(mesh, Corner(1, -1, -1), Corner(1, 1, -1), Corner(1, 1, 1), Corner(1, -1, 1), Vector3.Normalize(length));
-                onLeft = !onLeft;
+                TunnelLightRow.Centre => new[] { true },
+                TunnelLightRow.Both => new[] { false, true },
+                _ => new[] { false },
+            };
+            foreach (var centre in rows)
+            {
+                var onLeft = true;
+                var step = centre ? tunnel.LightSpacing : tunnel.LightSpacing / 2f;
+                for (var along = from + step; along < to - tunnel.LightLength; along += step)
+                {
+                    var frame = RoadCurve.At(frames, along);
+                    // In the middle: just under the ceiling, facing straight down.
+                    var at = centre
+                        ? frame.Across((left + right) / 2f) + Vector3.UnitY * (tunnel.Clearance - halfDepth)
+                        : frame.Across(onLeft ? left + inset : right - inset) + Vector3.UnitY * (tunnel.Clearance - inset);
+                    var facing = centre ? -Vector3.UnitY : Vector3.Normalize(frame.Across((left + right) / 2f) - at);
+                    places.Add((at, facing));
+                    var length = Vector3.Normalize(frame.Forward) * tunnel.LightLength / 2f;
+                    var width = Vector3.Normalize(Vector3.Cross(facing, length)) * halfWidth;
+                    var depth = facing * halfDepth;
+                    Vector3 Corner(int l, int w, int d) => at + length * l + width * w + depth * d;
+                    Face(mesh, Corner(-1, -1, 1), Corner(1, -1, 1), Corner(1, 1, 1), Corner(-1, 1, 1), facing);
+                    Face(mesh, Corner(-1, -1, -1), Corner(1, -1, -1), Corner(1, 1, -1), Corner(-1, 1, -1), -facing);
+                    Face(mesh, Corner(-1, -1, -1), Corner(1, -1, -1), Corner(1, -1, 1), Corner(-1, -1, 1), -Vector3.Normalize(width));
+                    Face(mesh, Corner(-1, 1, -1), Corner(1, 1, -1), Corner(1, 1, 1), Corner(-1, 1, 1), Vector3.Normalize(width));
+                    Face(mesh, Corner(-1, -1, -1), Corner(-1, 1, -1), Corner(-1, 1, 1), Corner(-1, -1, 1), -Vector3.Normalize(length));
+                    Face(mesh, Corner(1, -1, -1), Corner(1, 1, -1), Corner(1, 1, 1), Corner(1, -1, 1), Vector3.Normalize(length));
+                    onLeft = !onLeft;
+                }
             }
         }
 

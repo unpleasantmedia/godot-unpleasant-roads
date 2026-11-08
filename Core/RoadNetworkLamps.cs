@@ -280,7 +280,7 @@ public partial class RoadNetwork
         foreach (var drawn in FindChildren("*", "GeometryInstance3D", true, false).OfType<GeometryInstance3D>())
         {
             if (IsBakeable(drawn, this))
-                drawn.Visible = false;
+                Drop(drawn);
         }
 
         GetTree().NodeAdded += BakedAdded;
@@ -293,8 +293,21 @@ public partial class RoadNetwork
             Callable.From(() =>
             {
                 if (IsInstanceValid(drawn) && IsBakeable(drawn, this))
-                    drawn.Visible = false;
+                    Drop(drawn);
             }).CallDeferred();
+    }
+
+    /// <summary>
+    /// A piece the baked look stands in for: hidden, and its mesh let go of, for its memory (on the GPU
+    /// too). The node is kept, for the road that made it; one built again is given a mesh anew.
+    /// </summary>
+    private static void Drop(GeometryInstance3D drawn)
+    {
+        drawn.Visible = false;
+        if (drawn is MeshInstance3D model)
+            model.Mesh = null;
+        else if (drawn is MultiMeshInstance3D many)
+            many.Multimesh = null;
     }
 
     /// <summary>No longer hiding what is made of its look (it is leaving the tree).</summary>

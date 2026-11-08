@@ -40,19 +40,104 @@ public sealed class RoadMergedSurface
     /// (left out of the versions for further off than it is seen), or with none, always kept. With a
     /// colour given, every corner of it that colour (a window's glass, marked with its window).
     /// </summary>
+    /// <summary>A surface's arrays, as read out of its mesh.</summary>
+    private sealed record SurfaceArrays(Vector3[] Vertices, Vector3[]? Normals, float[]? Tangents, Color[]? Colors, Vector2[]? Uvs, Vector2[]? Uv2s, int[] Order);
+
+    /// <summary>
+    /// While set (see <see cref="ReadOnce"/>), each mesh's surfaces read out of Godot only once: one
+    /// piece placed many times (a lamp post, a barrier) would otherwise be read again for each place.
+    /// </summary>
+    private static Dictionary<(Mesh, int), SurfaceArrays?>? _read;
+
+    /// <summary>Reads each mesh's surfaces once only until disposed: for a bake, while its meshes do not change.</summary>
+    public static System.IDisposable ReadOnce()
+    {
+        _read = [];
+        _signatures = [];
+        return new Done();
+    }
+
+    private sealed class Done : System.IDisposable
+    {
+        public void Dispose()
+        {
+            _read = null;
+            _signatures = null;
+        }
+    }
+
+    private static Dictionary<(Mesh, int), ulong>? _signatures;
+
+    /// <summary>
+    /// A number standing for a surface's shape (its corners, normals, colours, uvs and triangles): the
+    /// same for the same shape, from run to run. For a bake to tell which of its squares changed.
+    /// </summary>
+    public static ulong Signature(Mesh mesh, int surface)
+    {
+        if (_signatures is not null && _signatures.TryGetValue((mesh, surface), out var known))
+            return known;
+        var hash = 14695981039346656037UL;
+        void Bytes(System.ReadOnlySpan<byte> bytes)
+        {
+            foreach (var b in bytes)
+                hash = (hash ^ b) * 1099511628211UL;
+            hash = (hash ^ 0xFF) * 1099511628211UL;
+        }
+
+        void Of<T>(T[]? values) where T : unmanaged
+        {
+            if (values is null)
+                Bytes([0]);
+            else
+                Bytes(System.Runtime.InteropServices.MemoryMarshal.AsBytes<T>(values));
+        }
+
+        if (Read(mesh, surface) is { } read)
+        {
+            Of(read.Vertices);
+            Of(read.Normals);
+            Of(read.Tangents);
+            Of(read.Colors);
+            Of(read.Uvs);
+            Of(read.Uv2s);
+            Of(read.Order);
+        }
+
+        if (_signatures is not null)
+            _signatures[(mesh, surface)] = hash;
+        return hash;
+    }
+
+    private static SurfaceArrays? Read(Mesh mesh, int surface)
+    {
+        if (_read is not null && _read.TryGetValue((mesh, surface), out var known))
+            return known;
+        var arrays = mesh.SurfaceGetArrays(surface);
+        SurfaceArrays? read = null;
+        if (arrays.Count > (int)Mesh.ArrayType.Index && arrays[(int)Mesh.ArrayType.Vertex].VariantType != Variant.Type.Nil)
+        {
+            var vertices = arrays[(int)Mesh.ArrayType.Vertex].AsVector3Array();
+            var indices = arrays[(int)Mesh.ArrayType.Index].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.Index].AsInt32Array();
+            read = new SurfaceArrays(
+                vertices,
+                arrays[(int)Mesh.ArrayType.Normal].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.Normal].AsVector3Array(),
+                arrays[(int)Mesh.ArrayType.Tangent].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.Tangent].AsFloat32Array(),
+                arrays[(int)Mesh.ArrayType.Color].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.Color].AsColorArray(),
+                arrays[(int)Mesh.ArrayType.TexUV].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.TexUV].AsVector2Array(),
+                arrays[(int)Mesh.ArrayType.TexUV2].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.TexUV2].AsVector2Array(),
+                indices ?? Enumerable.Range(0, vertices.Length).ToArray());
+        }
+
+        if (_read is not null)
+            _read[(mesh, surface)] = read;
+        return read;
+    }
+
     public void Append(Mesh mesh, int surface, Transform3D into, float? detail, Color? colour = null)
     {
-        var arrays = mesh.SurfaceGetArrays(surface);
-        if (arrays.Count <= (int)Mesh.ArrayType.Index || arrays[(int)Mesh.ArrayType.Vertex].VariantType == Variant.Type.Nil)
+        if (Read(mesh, surface) is not { } read)
             return;
-        var vertices = arrays[(int)Mesh.ArrayType.Vertex].AsVector3Array();
-        var normals = arrays[(int)Mesh.ArrayType.Normal].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.Normal].AsVector3Array();
-        var tangents = arrays[(int)Mesh.ArrayType.Tangent].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.Tangent].AsFloat32Array();
-        var colors = arrays[(int)Mesh.ArrayType.Color].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.Color].AsColorArray();
-        var uvs = arrays[(int)Mesh.ArrayType.TexUV].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.TexUV].AsVector2Array();
-        var uv2s = arrays[(int)Mesh.ArrayType.TexUV2].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.TexUV2].AsVector2Array();
-        var indices = arrays[(int)Mesh.ArrayType.Index].VariantType == Variant.Type.Nil ? null : arrays[(int)Mesh.ArrayType.Index].AsInt32Array();
-        var order = indices ?? Enumerable.Range(0, vertices.Length).ToArray();
+        var (vertices, normals, tangents, colors, uvs, uv2s, order) = (read.Vertices, read.Normals, read.Tangents, read.Colors, read.Uvs, read.Uv2s, read.Order);
 
         // Normals turned as the model is (stretched, by its inverse transposed), tangents as it is.
         var normalBasis = into.Basis.Inverse().Transposed();
@@ -98,6 +183,9 @@ public sealed class RoadMergedSurface
     /// <summary>A place or direction rounded to a tenth of a millimetre, so corners a hair apart are one.</summary>
     private static Vector3 Round(Vector3 v) => new(Mathf.Round(v.X * 10000f) / 10000f, Mathf.Round(v.Y * 10000f) / 10000f, Mathf.Round(v.Z * 10000f) / 10000f);
 
+    /// <summary>How big a surface can be and still be stored compressed, in metres (see AddTo).</summary>
+    private const float CompressWithin = 500f;
+
     /// <summary>Added to a mesh as a surface of its own, with its simpler versions, in a material, named as given.</summary>
     public void AddTo(ArrayMesh mesh, Material? material, string name)
     {
@@ -105,7 +193,8 @@ public sealed class RoadMergedSurface
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = _vertices.ToArray();
         arrays[(int)Mesh.ArrayType.Normal] = _normals.ToArray();
-        if (_anyTangents)
+        // Tangents only for a material that bends its light by a normal map (a shader's might).
+        if (_anyTangents && material is not BaseMaterial3D { NormalEnabled: false })
             arrays[(int)Mesh.ArrayType.Tangent] = _tangents.ToArray();
         if (_anyColors)
             arrays[(int)Mesh.ArrayType.Color] = _colors.ToArray();
@@ -134,7 +223,14 @@ public sealed class RoadMergedSurface
             lods[level] = indices.ToArray();
         }
 
-        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, lods);
+        // Stored compressed (16-bit, within its bounds) where that is still fine enough: across at most
+        // CompressWithin metres, a few millimetres, well under how high lines sit above the road.
+        var low = _vertices.Aggregate(Vector3.Inf, (a, v) => a.Min(v));
+        var high = _vertices.Aggregate(-Vector3.Inf, (a, v) => a.Max(v));
+        var size = high - low;
+        var compress = Mathf.Max(size.X, Mathf.Max(size.Y, size.Z)) <= CompressWithin;
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, lods,
+            compress ? Mesh.ArrayFormat.FlagCompressAttributes : 0);
         var surface = mesh.GetSurfaceCount() - 1;
         mesh.SurfaceSetMaterial(surface, material);
         if (!string.IsNullOrEmpty(name))

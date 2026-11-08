@@ -28,6 +28,7 @@ public partial class RoadStructure : Node3D
     private Color _lightColour = new(1f, 0.62f, 0.25f);
     private float _lightEnergy = 2f;
     private float _lightRange = 14f;
+    private TunnelLightRow _lightRow = TunnelLightRow.Sides;
 
     [Export]
     public StructureKind Kind { get => _kind; set => Change(ref _kind, value); }
@@ -65,7 +66,7 @@ public partial class RoadStructure : Node3D
     [Export(PropertyHint.Range, "0.2,5,0.05,suffix:m")]
     public float WallThickness { get => _wallThickness; set => Change(ref _wallThickness, value); }
 
-    /// <summary>How far apart its light bars are along each side, in metres, by turns on either side; nought for none.</summary>
+    /// <summary>How far apart its light bars are along each side, in metres, by turns on either side (in the centre row, how far apart they are); nought for none.</summary>
     [Export(PropertyHint.Range, "0,50,0.5,suffix:m")]
     public float LightSpacing { get => _lightSpacing; set => Change(ref _lightSpacing, value); }
 
@@ -85,9 +86,13 @@ public partial class RoadStructure : Node3D
     [Export(PropertyHint.Range, "1,60,0.5,suffix:m")]
     public float LightRange { get => _lightRange; set => Change(ref _lightRange, value); }
 
+    /// <summary>Where its light bars hang: in the corners of its roof by turns on either side, in one row along the middle of its ceiling (Light Spacing apart), or both.</summary>
+    [Export]
+    public TunnelLightRow LightRow { get => _lightRow; set => Change(ref _lightRow, value); }
+
     public Road? Road => GetParent() as Road;
 
-    public StructureSpec Spec => new(_kind, _start, _length, _deckDepth, _barrierHeight, _barrierWidth, _pillarSpacing, _pillarWidth, _clearance, _wallThickness, _lightSpacing, _lightLength, _lightColour.R, _lightColour.G, _lightColour.B, _lightEnergy, _lightRange);
+    public StructureSpec Spec => new(_kind, _start, _length, _deckDepth, _barrierHeight, _barrierWidth, _pillarSpacing, _pillarWidth, _clearance, _wallThickness, _lightSpacing, _lightLength, _lightColour.R, _lightColour.G, _lightColour.B, _lightEnergy, _lightRange, _lightRow);
 
     /// <summary>Sits where it begins, so selecting and framing it shows it; called when its road has been built again.</summary>
     public void Refresh(System.Collections.Generic.IReadOnlyList<RoadFrame>? roadFrames = null)

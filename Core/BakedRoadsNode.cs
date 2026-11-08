@@ -50,11 +50,52 @@ public partial class BakedRoadsNode : Node3D
         }
 
         network.HideBaked();
+        // Drawn to the game's view distances: its squares of road no further than the level is, its
+        // small things no further than objects are (squares baked before there were settings too).
+        foreach (var square in GetChildren().OfType<GeometryInstance3D>())
+        {
+            // One reaching far past its square (a road's tunnels and viaducts are one mesh, put in the
+            // square of its middle, which can be far from all of them) is always drawn: judged by its
+            // middle, it would go when that is out of reach, though its parts are near.
+            if (square.GetAabb().Size is var size && Mathf.Max(size.X, size.Z) > 2f * BigSquare)
+                continue;
+            if (square.IsInGroup(RoadDrawDistance.NearGroup))
+                RoadDrawDistance.LimitNear(square);
+            else if (square.VisibilityRangeEnd > 0f)
+                RoadDrawDistance.LimitSmall(square);
+            else
+                RoadDrawDistance.LimitLevel(square);
+        }
     }
 
     /// <summary>
-    /// A road network's look baked: merged as above into meshes saved in <see cref="MeshFolder"/>, under a
-    /// new BakedRoadsNode beside it (in place of one it had). Returns that node, or null with nothing to bake.
+    /// What was in each baked square when it was baked (its pieces' shapes, places and materials, as
+    /// one number), by its key (see <see cref="KeyOf"/>): a square whose pieces are the same now is
+    /// not baked again.
+    /// </summary>
+    [Export]
+    public Godot.Collections.Dictionary<string, string> SquarePrints { get; set; } = new();
+
+    /// <summary>The metadata on each baked mesh's node naming its square, as its key.</summary>
+    private const string SquareMeta = "baked_square";
+
+    /// <summary>
+    /// How baked meshes are made, in each square's print: changed when that changes (as when they
+    /// came to be stored compressed), for every square to be baked again the next time.
+    /// </summary>
+    private const string BakeFormat = "compressed-1|";
+
+    /// <summary>A square's key: x and z, small (1) or big (0), and how it casts shadows; each has a mesh of its own.</summary>
+    private static string KeyOf(Vector3I square, GeometryInstance3D.ShadowCastingSetting shadow) => $"{square.X},{square.Y},{square.Z},{(int)shadow}";
+
+    /// <summary>A piece of the network to be baked: its mesh, where it is, what it is drawn with, and the square it falls in.</summary>
+    private sealed record Piece(Mesh Mesh, Transform3D Place, bool Small, GeometryInstance3D.ShadowCastingSetting Shadow, System.Func<int, Material?> MaterialOf, Vector3I Square);
+
+    /// <summary>
+    /// A road network's look baked: merged as above into meshes saved in <see cref="MeshFolder"/>, a file
+    /// for each square, under a BakedRoadsNode beside it. Baked before, only the squares whose pieces
+    /// changed (in shape, place or material; come or gone) are baked again, every other square's mesh
+    /// kept as it was; the first time, all of them. Returns the node, or null with nothing to bake.
     /// </summary>
     public static BakedRoadsNode? Bake(RoadNetwork network, Node owner)
     {
@@ -62,29 +103,22 @@ public partial class BakedRoadsNode : Node3D
             return null;
         var name = $"{owner.SceneFilePath.GetFile().GetBaseName()}-{network.Name}";
         var toNetwork = network.GlobalTransform.AffineInverse();
+        // Each mesh read once, however many times it is placed.
+        using var readOnce = RoadMergedSurface.ReadOnce();
+        var existing = holder.GetChildren().OfType<BakedRoadsNode>().FirstOrDefault(b => b.GetNodeOrNull(b.Network) == network);
+        var all = existing is null || existing.SquarePrints.Count == 0;
 
-        // Each drawn thing's surfaces, by its square, whether it is small, whether it casts a shadow, and its material.
-        var merged = new Dictionary<(Vector2I Square, bool Small, GeometryInstance3D.ShadowCastingSetting Shadow), Dictionary<Material, RoadMergedSurface>>();
-        void Add(Mesh mesh, Transform3D into, bool small, GeometryInstance3D.ShadowCastingSetting shadow, System.Func<int, Material?> materialOf)
+        // Every piece and its square, without merging any, to find which squares are to be baked.
+        var pieces = new List<Piece>();
+        Vector3I SquareOf(Mesh mesh, Transform3D into, bool small)
         {
             var middle = (into * mesh.GetAabb()).GetCenter();
             var size = small ? SmallSquare : BigSquare;
-            var square = new Vector2I(Mathf.FloorToInt(middle.X / size), Mathf.FloorToInt(middle.Z / size));
-            if (!merged.TryGetValue((square, small, shadow), out var byMaterial))
-                merged[(square, small, shadow)] = byMaterial = new Dictionary<Material, RoadMergedSurface>();
-            for (var surface = 0; surface < mesh.GetSurfaceCount(); surface++)
-            {
-                // Triangles only (not an editor outline drawn in lines).
-                var triangles = mesh is ArrayMesh made ? made.SurfaceGetPrimitiveType(surface) == Mesh.PrimitiveType.Triangles : mesh is not ImmediateMesh;
-                if (!triangles)
-                    continue;
-                // (One with none drawn in Godot's own default, as it was.)
-                var material = materialOf(surface) ?? Unmaterialled;
-                if (!byMaterial.TryGetValue(material, out var into2))
-                    byMaterial[material] = into2 = new RoadMergedSurface();
-                into2.Append(mesh, surface, into, null);
-            }
+            return new Vector3I(Mathf.FloorToInt(middle.X / size), Mathf.FloorToInt(middle.Z / size), small ? 1 : 0);
         }
+
+        // Things drawn only near (see RoadDrawDistance.Near) in squares of their own, kept that near.
+        Vector3I Near(Vector3I square, GeometryInstance3D drawn) => drawn.IsInGroup(RoadDrawDistance.NearGroup) ? square with { Z = 2 } : square;
 
         foreach (var drawn in network.FindChildren("*", "GeometryInstance3D", true, false).OfType<GeometryInstance3D>())
         {
@@ -93,46 +127,113 @@ public partial class BakedRoadsNode : Node3D
             var small = drawn.VisibilityRangeEnd > 0f;
             var place = toNetwork * drawn.GlobalTransform;
             if (drawn is MeshInstance3D { Mesh: { } mesh } model)
-                Add(mesh, place, small, model.CastShadow, s => model.MaterialOverride ?? model.GetSurfaceOverrideMaterial(s) ?? mesh.SurfaceGetMaterial(s));
+                pieces.Add(new Piece(mesh, place, small, model.CastShadow, s => model.MaterialOverride ?? model.GetSurfaceOverrideMaterial(s) ?? mesh.SurfaceGetMaterial(s), Near(SquareOf(mesh, place, small), model)));
             else if (drawn is MultiMeshInstance3D { Multimesh: { Mesh: { } piece } multi } many)
             {
                 for (var i = 0; i < multi.InstanceCount; i++)
-                    Add(piece, place * multi.GetInstanceTransform(i), small, many.CastShadow, s => many.MaterialOverride ?? piece.SurfaceGetMaterial(s));
+                {
+                    var at = place * multi.GetInstanceTransform(i);
+                    pieces.Add(new Piece(piece, at, small, many.CastShadow, s => many.MaterialOverride ?? piece.SurfaceGetMaterial(s), Near(SquareOf(piece, at, small), many)));
+                }
             }
         }
 
-        if (merged.Count == 0)
-            return null;
+        // What is in each square now, as one number, to be told from what was.
+        var materials = new Dictionary<Material, string>();
+        string MaterialPrint(Material? material) =>
+            material is null ? "none"
+            : materials.TryGetValue(material, out var known) ? known
+            : materials[material] = material.ResourcePath is { Length: > 0 } file && !file.Contains("::") ? file : RoadNetwork.ResourceFingerprint(material);
+        var prints = new Dictionary<string, string>();
+        foreach (var square in pieces.GroupBy(p => KeyOf(p.Square, p.Shadow)))
+        {
+            var text = new System.Text.StringBuilder();
+            foreach (var piece in square)
+            {
+                text.Append(piece.Place).Append('|');
+                for (var surface = 0; surface < piece.Mesh.GetSurfaceCount(); surface++)
+                    text.Append(RoadMergedSurface.Signature(piece.Mesh, surface)).Append('/').Append(MaterialPrint(piece.MaterialOf(surface))).Append(';');
+            }
 
-        // Its meshes saved afresh (any from before taken away), under a node of its own beside the network.
+            prints[square.Key] = (BakeFormat + text.ToString()).Md5Text();
+        }
+
+        var dirty = all ? prints.Keys.ToHashSet() : prints.Keys.Union(existing!.SquarePrints.Keys)
+            .Where(k => !prints.TryGetValue(k, out var now) || !existing.SquarePrints.TryGetValue(k, out var then) || now != then).ToHashSet();
+        if (!all && dirty.Count == 0)
+        {
+            existing!.Fingerprint = network.Fingerprint();
+            GD.Print($"Bake Roads: no square of {network.Name} has changed since it was baked.");
+            return existing;
+        }
+
+        // The pieces of the squares to bake, merged by square, whether small, shadow, and material.
+        var merged = new Dictionary<(Vector3I Square, GeometryInstance3D.ShadowCastingSetting Shadow), Dictionary<Material, RoadMergedSurface>>();
+        foreach (var piece in pieces.Where(p => dirty.Contains(KeyOf(p.Square, p.Shadow))))
+        {
+            if (!merged.TryGetValue((piece.Square, piece.Shadow), out var byMaterial))
+                merged[(piece.Square, piece.Shadow)] = byMaterial = new Dictionary<Material, RoadMergedSurface>();
+            for (var surface = 0; surface < piece.Mesh.GetSurfaceCount(); surface++)
+            {
+                // Triangles only (not an editor outline drawn in lines).
+                var triangles = piece.Mesh is ArrayMesh made ? made.SurfaceGetPrimitiveType(surface) == Mesh.PrimitiveType.Triangles : piece.Mesh is not ImmediateMesh;
+                if (!triangles)
+                    continue;
+                // (One with none drawn in Godot's own default, as it was.)
+                var material = piece.MaterialOf(surface) ?? Unmaterialled;
+                if (!byMaterial.TryGetValue(material, out var into))
+                    byMaterial[material] = into = new RoadMergedSurface();
+                into.Append(piece.Mesh, surface, piece.Place, null);
+            }
+        }
+
         DirAccess.MakeDirRecursiveAbsolute(MeshFolder);
-        using (var folder = DirAccess.Open(MeshFolder))
+        BakedRoadsNode baked;
+        if (all)
         {
-            foreach (var old in folder?.GetFiles().Where(f => f.StartsWith(name + "-")) ?? [])
-                folder!.Remove(old);
+            // All of it afresh: the meshes from before taken away, and the node they were under.
+            using (var folder = DirAccess.Open(MeshFolder))
+            {
+                foreach (var old in folder?.GetFiles().Where(f => f.StartsWith(name + "-")) ?? [])
+                    folder!.Remove(old);
+            }
+
+            foreach (var old in holder.GetChildren().OfType<BakedRoadsNode>().Where(b => b.GetNodeOrNull(b.Network) == network).ToList())
+            {
+                holder.RemoveChild(old);
+                old.QueueFree();
+            }
+
+            baked = new BakedRoadsNode { Name = $"{network.Name}Baked", Transform = network.Transform };
+            holder.AddChild(baked);
+            baked.Owner = owner;
+            baked.Network = baked.GetPathTo(network);
+        }
+        else
+        {
+            // Only the squares baked again: theirs from before taken away, file and all.
+            baked = existing!;
+            foreach (var chunk in baked.GetChildren().OfType<MeshInstance3D>().ToList())
+            {
+                if (!dirty.Contains(chunk.GetMeta(SquareMeta, "").AsString()))
+                    continue;
+                if (chunk.Mesh?.ResourcePath is { Length: > 0 } file && FileAccess.FileExists(file))
+                    DirAccess.RemoveAbsolute(file);
+                baked.RemoveChild(chunk);
+                chunk.QueueFree();
+            }
         }
 
-        // Any baked before for this network (its path is kept from itself, so it is looked up from there).
-        foreach (var old in holder.GetChildren().OfType<BakedRoadsNode>().Where(b => b.GetNodeOrNull(b.Network) == network).ToList())
-        {
-            holder.RemoveChild(old);
-            old.QueueFree();
-        }
-
-        var baked = new BakedRoadsNode { Name = $"{network.Name}Baked", Transform = network.Transform };
-        holder.AddChild(baked);
-        baked.Owner = owner;
-        baked.Network = baked.GetPathTo(network);
-        baked.Fingerprint = network.Fingerprint();
-        var count = 0;
-        foreach (var ((square, small, shadow), byMaterial) in merged)
+        foreach (var ((square, shadow), byMaterial) in merged)
         {
             var mesh = new ArrayMesh();
             foreach (var (material, surface) in byMaterial.Where(e => !e.Value.IsEmpty))
                 surface.AddTo(mesh, material, "");
             if (mesh.GetSurfaceCount() == 0)
                 continue;
-            var path = $"{MeshFolder}/{name}-{++count}.res";
+            var near = square.Z == 2;
+            var small = square.Z >= 1;
+            var path = $"{MeshFolder}/{name}-{(near ? "N" : small ? "S" : "R")}{square.X}_{square.Y}-{(int)shadow}.res";
             if (ResourceSaver.Save(mesh, path) != Error.Ok)
             {
                 GD.PushError($"Bake Roads: could not save {path}.");
@@ -143,16 +244,22 @@ public partial class BakedRoadsNode : Node3D
             // then refers to the file. (A mesh only given the path is left with none once the editor
             // loads the file again on its own, having seen it change; the scene then holds it whole, as text.)
             var saved = ResourceLoader.Load<ArrayMesh>(path, null, ResourceLoader.CacheMode.Replace) ?? mesh;
-            var chunk = new MeshInstance3D { Name = $"{(small ? "Small" : "Roads")}{square.X}_{square.Y}", Mesh = saved, CastShadow = shadow };
+            var chunk = new MeshInstance3D { Name = $"{(near ? "Near" : small ? "Small" : "Roads")}{square.X}_{square.Y}", Mesh = saved, CastShadow = shadow };
+            chunk.SetMeta(SquareMeta, KeyOf(square, shadow));
             // Small things (signs, lamp posts) not drawn from far off, as they were not (see DrawDistance).
-            if (small)
+            if (near)
+                RoadDrawDistance.LimitNear(chunk);
+            else if (small)
                 RoadDrawDistance.LimitSmall(chunk);
-            baked.AddChild(chunk);
+            baked.AddChild(chunk, true);
             chunk.Owner = owner;
         }
 
+        baked.Fingerprint = network.Fingerprint();
+        baked.SquarePrints = new Godot.Collections.Dictionary<string, string>(prints);
         // Not shown in the editor (the network's own look is): see _Ready.
         baked.Visible = false;
+        GD.Print(all ? $"Bake Roads: baked all of {network.Name}." : $"Bake Roads: {dirty.Count} squares of {network.Name} changed; baked them again.");
         return baked;
     }
 }

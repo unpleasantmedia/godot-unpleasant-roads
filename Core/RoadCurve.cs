@@ -181,18 +181,26 @@ public sealed class RoadCurve
     public static RoadFrame At(IReadOnlyList<RoadFrame> frames, float distance)
     {
         distance = Math.Clamp(distance, frames[0].Distance, frames[^1].Distance);
-        for (var i = 0; i + 1 < frames.Count; i++)
+        if (frames.Count < 2)
+            return frames[^1];
+        // The first sample pair it is not past (the last pair if it is past them all), found by halving:
+        // the samples run in order of distance, and a long road has thousands of them, asked for again
+        // and again (each post of its rails), which going through them from the start each time made slow.
+        var (low, high) = (0, frames.Count - 2);
+        while (low < high)
         {
-            var (a, b) = (frames[i], frames[i + 1]);
-            if (distance > b.Distance && i + 2 < frames.Count)
-                continue;
-            var span = b.Distance - a.Distance;
-            var t = span > 1e-6f ? Math.Clamp((distance - a.Distance) / span, 0f, 1f) : 0f;
-            return new RoadFrame(Vector3.Lerp(a.Position, b.Position, t), Vector3.Normalize(Vector3.Lerp(a.Forward, b.Forward, t)),
-                Vector3.Normalize(Vector3.Lerp(a.Right, b.Right, t)), distance);
+            var middle = (low + high) / 2;
+            if (distance > frames[middle + 1].Distance)
+                low = middle + 1;
+            else
+                high = middle;
         }
 
-        return frames[^1];
+        var (a, b) = (frames[low], frames[low + 1]);
+        var span = b.Distance - a.Distance;
+        var t = span > 1e-6f ? Math.Clamp((distance - a.Distance) / span, 0f, 1f) : 0f;
+        return new RoadFrame(Vector3.Lerp(a.Position, b.Position, t), Vector3.Normalize(Vector3.Lerp(a.Forward, b.Forward, t)),
+            Vector3.Normalize(Vector3.Lerp(a.Right, b.Right, t)), distance);
     }
 
     /// <summary>Which way the fine line runs at this piece of it, smoothed with its neighbours.</summary>
