@@ -5,7 +5,7 @@ using Godot;
 namespace UnpleasantMedia.UnpleasantRoads;
 
 /// <summary>
-/// A road network's look baked into a few meshes (see <see cref="Bake"/>, the Bake Roads tool): every
+/// A road network's look baked into a few meshes (see <see cref="Bake"/>, the Bake Roads button on a RoadNetwork): every
 /// road's, junction's, path's and parking lot's surfaces, their signs, gantries and lamp posts, merged by
 /// material in squares of the ground, so they cost a few draw calls rather than one or more each. The
 /// network stays as it is, to be edited and to be baked again: in play its own look is hidden (see
@@ -45,7 +45,7 @@ public partial class BakedRoadsNode : Node3D
         if (network.Fingerprint() != Fingerprint)
         {
             Visible = false;
-            GD.PushWarning($"{Name}: the roads have changed since they were baked; showing them unbaked (slower). Run Tools → Bake Roads and save the level.");
+            GD.PushWarning($"{Name}: the roads have changed since they were baked; showing them unbaked (slower). Press Bake Roads in the road network's Inspector and save the level.");
             return;
         }
 
