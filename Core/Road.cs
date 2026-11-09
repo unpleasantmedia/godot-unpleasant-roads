@@ -1454,7 +1454,7 @@ public partial class Road : Node3D
         }
     }
 
-    /// <summary>The material (in Assets/Materials, by name) a kind of path is made of, unless it is given another.</summary>
+    /// <summary>The material (in the plugin's Materials folder, by name) a kind of path is made of, unless it is given another.</summary>
     private static string PathMaterial(RoadPathKind kind) => kind switch
     {
         RoadPathKind.Gravel => "Path-Gravel",
@@ -1724,7 +1724,7 @@ public partial class Road : Node3D
         mesh.SurfaceSetMaterial(mesh.GetSurfaceCount() - 1, material);
     }
 
-    /// <summary>One of the road materials in Assets/Materials, if it is there and loads.</summary>
+    /// <summary>One of the road materials in the plugin's Materials folder, if it is there and loads.</summary>
     public static Material? DefaultMaterial(string name)
     {
         var path = $"res://addons/unpleasant_roads/Materials/{name}.tres";
