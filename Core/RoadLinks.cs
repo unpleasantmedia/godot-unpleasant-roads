@@ -77,8 +77,12 @@ public static class RoadLinks
     /// <summary>Gives the ground of a node: the one it is, or the first under it, or null. Without it, roads keep the heights they are drawn at.</summary>
     public static Func<Node?, IRoadGround?>? Ground { get; set; }
 
-    /// <summary>Makes a barrier along points: its name, its kind, whether it is flipped, and its points. Without it, roads have none.</summary>
-    public static Func<string, RoadBarrierKind, bool, Vector3[], Node?>? MakeBarrier { get; set; }
+    /// <summary>
+    /// Makes a barrier along points: its name, its kind, whether it is flipped, its points, and whether
+    /// it is drawn. It is not where its network shows a baked look in its place (which draws it): it is
+    /// then only to be solid. Without it, roads have none.
+    /// </summary>
+    public static Func<string, RoadBarrierKind, bool, Vector3[], bool, Node?>? MakeBarrier { get; set; }
 
     /// <summary>How far street lamps are on, from 0 to 1, as the time of day has it. Without it, they stay on.</summary>
     public static Func<float>? LampLevel { get; set; }
@@ -104,7 +108,11 @@ public static class RoadLinks
     /// <summary>Adds a barrier under a node, if the project makes them.</summary>
     internal static void AddBarrier(Node parent, string name, RoadBarrierKind kind, bool flip, Vector3[] points)
     {
-        if (MakeBarrier?.Invoke(name, kind, flip, points) is { } barrier)
+        var network = parent;
+        while (network is not null and not RoadNetwork)
+            network = network.GetParent();
+        var drawn = network is not RoadNetwork { ShowsBaked: true };
+        if (MakeBarrier?.Invoke(name, kind, flip, points, drawn) is { } barrier)
             parent.AddChild(barrier);
     }
 }

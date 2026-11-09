@@ -1,6 +1,10 @@
-[gd_resource type="ShaderMaterial" format=3]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://ciceu0rykb8bs"]
 
-[ext_resource type="Shader" path="res://addons/unpleasant_roads/Shaders/TunnelInside.gdshader" id="1_shader"]
+[ext_resource type="Shader" uid="uid://n1n5ipdh1m3a" path="res://addons/unpleasant_roads/Shaders/TunnelInside.gdshader" id="1_shader"]
 
 [resource]
+render_priority = 0
 shader = ExtResource("1_shader")
+shader_parameter/colour = Color(0.725, 0.725, 0.682, 1)
+shader_parameter/roughness_amount = 0.9
+shader_parameter/bounced_light = 0.0

@@ -1,7 +1,11 @@
-[gd_resource type="ShaderMaterial" format=3]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dymbvgy4yo4qk"]
 
-[ext_resource type="Shader" path="res://addons/unpleasant_roads/Shaders/StreetLampGlow.gdshader" id="1_shader"]
+[ext_resource type="Shader" uid="uid://ygpeq3sv6aja" path="res://addons/unpleasant_roads/Shaders/StreetLampGlow.gdshader" id="1_shader"]
 
 [resource]
 resource_name = "Street-Lamp-Glow"
+render_priority = 0
 shader = ExtResource("1_shader")
+shader_parameter/street_lamps = 0.0
+shader_parameter/colour = Color(1, 0.987, 0.964, 1)
+shader_parameter/energy = 3.0

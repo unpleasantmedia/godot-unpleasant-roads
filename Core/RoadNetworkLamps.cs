@@ -268,6 +268,9 @@ public partial class RoadNetwork
     /// <summary>Whether its own look is hidden, a baked one shown in its place (see BakedRoadsNode).</summary>
     private bool _baked;
 
+    /// <summary>Whether a baked look is shown in place of its own (in play, with a bake that is current).</summary>
+    public bool ShowsBaked => _baked;
+
     /// <summary>
     /// Its own look hidden, for the baked one in its place (in play): all of it there now, and anything
     /// of it made after (a road built again, its lamp posts put up later).
@@ -304,10 +307,19 @@ public partial class RoadNetwork
     private static void Drop(GeometryInstance3D drawn)
     {
         drawn.Visible = false;
-        if (drawn is MeshInstance3D model)
+        // Let go of here at once too: a C# object for it (made as it was looked at) holds on to it
+        // until the garbage collector gets round to it, which let go of hundreds at once a moment
+        // into the game, holding up a frame.
+        if (drawn is MeshInstance3D model && model.Mesh is { } mesh)
+        {
             model.Mesh = null;
-        else if (drawn is MultiMeshInstance3D many)
+            mesh.Dispose();
+        }
+        else if (drawn is MultiMeshInstance3D many && many.Multimesh is { } multi)
+        {
             many.Multimesh = null;
+            multi.Dispose();
+        }
     }
 
     /// <summary>No longer hiding what is made of its look (it is leaving the tree).</summary>
