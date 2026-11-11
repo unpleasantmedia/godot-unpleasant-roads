@@ -518,8 +518,40 @@ public partial class RoadsPlugin : EditorPlugin
         }
     }
 
+    private bool _locked;
+
+    /// <summary>Its toolbar greyed out while a job reads the terrain (see <see cref="RoadJob.TerrainRead"/>).</summary>
+    public override void _Process(double delta)
+    {
+        var locked = RoadJob.TerrainRead;
+        if (locked == _locked || _toolbar is null)
+            return;
+        _locked = locked;
+        foreach (var control in _toolbar.FindChildren("*", "", true, false))
+        {
+            if (control is BaseButton button)
+                button.Disabled = locked;
+            else if (control is SpinBox box)
+                box.Editable = !locked;
+        }
+
+        _toolbar.TooltipText = locked ? "A job is reading the terrain: road tools come back when it is done." : "";
+    }
+
     public override int _Forward3DGuiInput(Camera3D camera, InputEvent @event)
     {
+        // While a job reads the terrain (which roads shape), no road is drawn or moved here: clicks taken, with a word why.
+        if (RoadJob.TerrainRead)
+        {
+            if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } && _toolbar?.Visible == true)
+            {
+                GD.PushWarning("Roads: editing has to wait; a job is reading the terrain (see the Output for its progress).");
+                return (int)AfterGuiInput.Stop;
+            }
+
+            return (int)AfterGuiInput.Pass;
+        }
+
         // With two or more roads selected, a right-click that does not move (the right button still
         // turns the camera) opens a menu to join them.
         if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Right } menuClick && SelectedRoads() is { Count: >= 2 } roads)

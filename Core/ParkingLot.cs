@@ -446,6 +446,9 @@ public partial class ParkingLot : Node3D, IRoadOutlined
         AddToGroup(Group);
     }
 
+    // Taken away (deleted, or its scene closed): nothing kept off it any more.
+    public override void _ExitTree() => RoadLinks.FootprintRemoved?.Invoke(this);
+
     public override void _Ready()
     {
         _notifiedAt = GlobalTransform;
@@ -684,6 +687,9 @@ public partial class ParkingLot : Node3D, IRoadOutlined
         Sidewalks = sidewalks;
         Asphalt = surface;
         OuterEdge = Distinct(points.Select(p => p.Width > 0f ? p.At + p.Out * p.Width : p.At)).ToList();
+        // Where it lies, sidewalks and all, for whatever keeps other things off it.
+        if (OuterEdge.Count >= 3)
+            RoadLinks.FootprintChanged?.Invoke(this, [RoadNetwork.Outline(OuterEdge)]);
 
         var toLocal = GlobalTransform.AffineInverse();
         var mesh = new ArrayMesh();

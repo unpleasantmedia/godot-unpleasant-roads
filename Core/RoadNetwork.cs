@@ -41,6 +41,28 @@ public partial class RoadNetwork : Node3D
     /// <summary>Its terrain's ground, if it has one.</summary>
     public IRoadGround? Ground => RoadLinks.Ground?.Invoke(Terrain ?? (IsInsideTree() ? (Engine.IsEditorHint() ? GetTree().EditedSceneRoot : GetTree().CurrentScene) : null));
 
+    /// <summary>
+    /// How far past a road's edges no foliage is painted, in metres: for every road of it
+    /// but those with a buffer of their own (0: none). Painting keeps off it while the Foliage dock's
+    /// Road Buffer is on.
+    /// </summary>
+    [Export(PropertyHint.Range, "0,100,0.5,or_greater,suffix:m")]
+    public float FoliageBuffer
+    {
+        get => _foliageBuffer;
+        set
+        {
+            _foliageBuffer = Mathf.Max(0f, value);
+            if (IsInsideTree())
+            {
+                foreach (var road in Roads)
+                    road.FoliageBufferChanged();
+            }
+        }
+    }
+
+    private float _foliageBuffer;
+
     /// <summary>How far past a road's edge the ground is kept flat with it.</summary>
     [Export(PropertyHint.Range, "0,10,0.5,suffix:m")]
     public float Margin { get; set; } = 1f;
@@ -157,9 +179,11 @@ public partial class RoadNetwork : Node3D
             return;
         }
 
-        var baked = BakedRoadsNode.Bake(this, root);
-        EditorInterface.Singleton.MarkSceneAsUnsaved();
-        GD.Print($"Baked {Name} into {baked?.GetChildCount() ?? 0} meshes. Save the level to keep them.");
+        BakedRoadsNode.Bake(this, root, baked =>
+        {
+            EditorInterface.Singleton.MarkSceneAsUnsaved();
+            GD.Print($"Baked {Name} into {baked?.GetChildCount() ?? 0} meshes. Save the level to keep them.");
+        });
     }
 
     [ExportToolButton("Join Crossing Roads", Icon = "CurveCreate")]
@@ -388,6 +412,7 @@ public partial class RoadNetwork : Node3D
     {
         if (RoadFootprint.Bounds(stretches) is not { } area)
             return;
+        RoadLinks.FootprintChanged?.Invoke(part, stretches);
         var id = part.GetInstanceId();
         var had = _footprints.TryGetValue(id, out var before);
         _footprints[id] = (part, stretches, area);
@@ -408,6 +433,7 @@ public partial class RoadNetwork : Node3D
     /// <summary>Road and junction taken away (deleted, say): the viaducts over where it was stand pillars there again.</summary>
     public void FootprintRemoved(Node3D part)
     {
+        RoadLinks.FootprintRemoved?.Invoke(part);
         var id = part.GetInstanceId();
         if (!_footprints.Remove(id, out var was))
             return;
@@ -1553,6 +1579,34 @@ public partial class RoadNetwork : Node3D
         Ground?.SetHoles(holes.Select(h => ((int)h.X, (int)h.Z, h.Y > 0.5f)));
 
     /// <summary>Sets grid points' heights, each given as (x grid index, height, z grid index), and redraws the terrain.</summary>
-    public void SetHeights(Vector3[] heights) =>
+    public void SetHeights(Vector3[] heights)
+    {
+        // While a job reads the terrain, held back and written once it is done (in the order given).
+        if (RoadJob.TerrainRead)
+        {
+            _heldHeights.Add(heights);
+            if (_heldHeights.Count == 1)
+                GetTree().ProcessFrame += WriteHeldHeights;
+            return;
+        }
+
         Ground?.SetHeights(heights.Select(h => ((int)h.X, (int)h.Z, h.Y)));
+    }
+
+    /// <summary>Heights to write to the ground once no job reads it any more.</summary>
+    private readonly List<Vector3[]> _heldHeights = [];
+
+    private void WriteHeldHeights()
+    {
+        if (RoadJob.TerrainRead)
+            return;
+        GetTree().ProcessFrame -= WriteHeldHeights;
+        var held = _heldHeights.ToList();
+        _heldHeights.Clear();
+        if (!IsInstanceValid(this))
+            return;
+        foreach (var heights in held)
+            Ground?.SetHeights(heights.Select(h => ((int)h.X, (int)h.Z, h.Y)));
+        GD.Print($"{Name}: wrote the road ground held back while a job read the terrain.");
+    }
 }

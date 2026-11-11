@@ -123,6 +123,45 @@ public partial class Road : Node3D
 
     private string _streetName = "";
 
+    /// <summary>Whether it has a foliage buffer of its own (see <see cref="FoliageBuffer"/>), not its network's.</summary>
+    [ExportGroup("Foliage")]
+    [Export]
+    public bool OwnFoliageBuffer
+    {
+        get => _ownFoliageBuffer;
+        set
+        {
+            _ownFoliageBuffer = value;
+            FoliageBufferChanged();
+        }
+    }
+
+    private bool _ownFoliageBuffer;
+
+    /// <summary>How far past its edges no foliage is painted, in metres (with Own Foliage Buffer on; else its network's).</summary>
+    [Export(PropertyHint.Range, "0,100,0.5,or_greater,suffix:m")]
+    public float FoliageBuffer
+    {
+        get => _foliageBuffer;
+        set
+        {
+            _foliageBuffer = Mathf.Max(0f, value);
+            FoliageBufferChanged();
+        }
+    }
+
+    private float _foliageBuffer;
+
+    /// <summary>How far past its edges no foliage is painted: its own, or its network's.</summary>
+    public float FoliageBufferUsed => _ownFoliageBuffer ? _foliageBuffer : Network?.FoliageBuffer ?? 0f;
+
+    /// <summary>Its buffer changed: told on (see RoadLinks.FootprintChanged), as where it lies is.</summary>
+    public void FoliageBufferChanged()
+    {
+        if (IsInsideTree() && FootprintStretches() is { Count: > 0 } stretches)
+            RoadLinks.FootprintChanged?.Invoke(this, stretches);
+    }
+
     /// <summary>Whether a direction sign stands on it before the junction at its start: Auto puts one up where it would anyway.</summary>
     [ExportGroup("Direction Signs")]
     [Export]

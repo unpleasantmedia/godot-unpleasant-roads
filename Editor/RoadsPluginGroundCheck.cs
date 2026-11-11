@@ -18,11 +18,38 @@ public partial class RoadsPlugin
     {
         if (EditorInterface.Singleton.GetEditedSceneRoot() is not { } root)
             return;
-        var found = new List<(float Above, string Road, float Along, float Across, Vector3 At)>();
+        // What there is to look over, read from the scene here; looked over on a thread.
+        var networks = new List<(IRoadGround Surface, List<(string Name, List<RoadFrame> Frames, float Left, float Right, List<StructureSpec> Structures)> Roads,
+            List<(string Name, List<Vector3> Outline)> Forks, List<(string Name, MeshData? Mesh, string What)> Lots)>();
         foreach (var network in root.FindChildren("*", nameof(RoadNetwork), true, false).OfType<RoadNetwork>())
         {
             if (network.Ground is not { } surface)
                 continue;
+            var roads = new List<(string, List<RoadFrame>, float, float, List<StructureSpec>)>();
+            foreach (var road in network.Roads)
+            {
+                var frames = road.Frames();
+                var runs = RoadMeshBuilder.PavedRuns(road.CrossSection).ToList();
+                if (frames.Count >= 2 && runs.Count > 0)
+                    roads.Add((road.Name, frames.ToList(), runs[0].Left, runs[^1].Right, road.StructureSpecs().ToList()));
+            }
+
+            var forks = network.Forks.Where(f => !f.Carried && f.Outline.Count >= 3).Select(f => ((string)f.Name, f.Outline.Select(p => p.ToGodot()).ToList())).ToList();
+            var lots = network.ParkingLots.SelectMany(l => new[] { ((string)l.Name, l.Asphalt, "asphalt"), ((string)l.Name, l.Sidewalks, "sidewalk") }).ToList();
+            networks.Add((surface, roads, forks, lots));
+        }
+
+        RoadJob.Start(root, GroundCheckItem, job => LookForGround(job, networks), found => ReportGround(root, found), readsTerrain: true);
+    }
+
+    private static List<(float Above, string Road, float Along, float Across, Vector3 At)> LookForGround(RoadJob job,
+        List<(IRoadGround Surface, List<(string Name, List<RoadFrame> Frames, float Left, float Right, List<StructureSpec> Structures)> Roads,
+            List<(string Name, List<Vector3> Outline)> Forks, List<(string Name, MeshData? Mesh, string What)> Lots)> networks)
+    {
+        job.SetTotal(networks.Sum(n => n.Roads.Count + n.Forks.Count + n.Lots.Count));
+        var found = new List<(float Above, string Road, float Along, float Across, Vector3 At)>();
+        foreach (var (surface, roadList, forkList, lotList) in networks)
+        {
             var spacing = surface.VertexSpacing;
             // The ground at a place as drawn: whichever way its cell is split, the higher.
             float GroundAt(Vector3 at)
@@ -37,16 +64,9 @@ public partial class RoadsPlugin
                 return Mathf.Max(one, other);
             }
 
-            foreach (var road in network.Roads)
+            foreach (var (roadName, frames, left, right, structures) in roadList)
             {
-                var frames = road.Frames();
-                if (frames.Count < 2)
-                    continue;
-                var runs = RoadMeshBuilder.PavedRuns(road.CrossSection).ToList();
-                if (runs.Count == 0)
-                    continue;
-                var (left, right) = (runs[0].Left, runs[^1].Right);
-                var structures = road.StructureSpecs();
+                job.Step();
                 for (var along = frames[0].Distance; along <= frames[^1].Distance; along += 1f)
                 {
                     if (structures.Any(s => s.Covers(along)))
@@ -60,15 +80,15 @@ public partial class RoadsPlugin
                             continue;
                         var above = ground - at.Y;
                         if (above > 0.005f)
-                            found.Add((above, road.Name, along, across, at));
+                            found.Add((above, roadName, along, across, at));
                     }
                 }
             }
 
             // Forks and merges (not viaducts): over their paving, each half metre; and where the ground is well under it (not fitted).
-            foreach (var fork in network.Forks.Where(f => !f.Carried && f.Outline.Count >= 3))
+            foreach (var (forkName, outline) in forkList)
             {
-                var outline = fork.Outline.Select(p => p.ToGodot()).ToList();
+                job.Step();
                 var flat = outline.Select(p => new Vector2(p.X, p.Z)).ToArray();
                 var (minX, maxX, minZ, maxZ) = (flat.Min(p => p.X), flat.Max(p => p.X), flat.Min(p => p.Y), flat.Max(p => p.Y));
                 var high = outline.Average(p => p.Y);
@@ -76,7 +96,7 @@ public partial class RoadsPlugin
                 for (var x = minX; x <= maxX; x += 0.5f)
                 for (var z = minZ; z <= maxZ; z += 0.5f)
                 {
-                    if (!Geometry2D.IsPointInPolygon(new Vector2(x, z), flat))
+                    if (!InPolygon(flat, new Vector2(x, z)))
                         continue;
                     // The fork's surface there: its outline's nearest point's height (it is near level across).
                     var nearest = outline.MinBy(p => new Vector2(p.X - x, p.Z - z).LengthSquared());
@@ -85,19 +105,19 @@ public partial class RoadsPlugin
                     if (float.IsNaN(ground))
                         continue;
                     if (ground - at.Y > 0.005f)
-                        found.Add((ground - at.Y, $"{fork.Name} (fork)", 0f, 0f, at));
+                        found.Add((ground - at.Y, $"{forkName} (fork)", 0f, 0f, at));
                     else if (at.Y - ground > 1f)
                         below++;
                 }
 
                 if (below > 0)
-                    GD.Print($"  {fork.Name}: the ground is more than 1 m under it in {below} places (not fitted to it?). Its outline is {outline.Count} points round, at about {high:0.0} m.");
+                    GD.Print($"  {forkName}: the ground is more than 1 m under it in {below} places (not fitted to it?). Its outline is {outline.Count} points round, at about {high:0.0} m.");
             }
 
             // Parking lots: over their asphalt and sidewalk tops, each half metre.
-            foreach (var lot in network.ParkingLots)
+            foreach (var (lotName, mesh, what) in lotList)
             {
-                foreach (var (mesh, what) in new[] { (lot.Asphalt, "asphalt"), (lot.Sidewalks, "sidewalk") })
+                job.Step();
                 {
                     if (mesh is null)
                         continue;
@@ -117,13 +137,34 @@ public partial class RoadsPlugin
                                 continue;
                             var above = ground - at.Y;
                             if (above > 0.005f)
-                                found.Add((above, $"{lot.Name} {what}", 0f, 0f, at));
+                                found.Add((above, $"{lotName} {what}", 0f, 0f, at));
                         }
                     }
                 }
             }
         }
 
+        return found;
+    }
+
+    private static bool InPolygon(Vector2[] outline, Vector2 point)
+    {
+        var inside = false;
+        for (int i = 0, j = outline.Length - 1; i < outline.Length; j = i++)
+        {
+            var (a, b) = (outline[i], outline[j]);
+            if (a.Y > point.Y != b.Y > point.Y && point.X < (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y) + a.X)
+                inside = !inside;
+        }
+
+        return inside;
+    }
+
+    /// <summary>What was found, printed: back on the main thread.</summary>
+    private static void ReportGround(Node root, List<(float Above, string Road, float Along, float Across, Vector3 At)> found)
+    {
+        if (!GodotObject.IsInstanceValid(root))
+            return;
         // Once per place (a lot's triangles share their corners).
         found = found.DistinctBy(f => (f.Road, Mathf.RoundToInt(f.At.X * 10f), Mathf.RoundToInt(f.At.Z * 10f))).ToList();
         if (found.Count == 0)

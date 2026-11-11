@@ -105,6 +105,15 @@ public static class RoadLinks
     /// <summary>For a node of a project's that clicks in the editor should find, its shape; null for any other.</summary>
     public static Func<Node3D, RoadPickShape?>? PickShape { get; set; }
 
+    /// <summary>
+    /// Told whenever a road, junction, fork, parking lot or square is built again, with the stretches it
+    /// lies along (a lot's and a square's: its outline): for a project to keep other things (foliage,
+    /// say) off it. And when one is taken away.
+    /// </summary>
+    public static Action<Node3D, IReadOnlyList<FootprintStretch>>? FootprintChanged { get; set; }
+
+    public static Action<Node3D>? FootprintRemoved { get; set; }
+
     /// <summary>Adds a barrier under a node, if the project makes them.</summary>
     internal static void AddBarrier(Node parent, string name, RoadBarrierKind kind, bool flip, Vector3[] points)
     {
