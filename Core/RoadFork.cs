@@ -26,7 +26,7 @@ public enum GoreBarrier
 [Tool]
 [GlobalClass]
 [Icon("res://addons/unpleasant_roads/Icons/Road-Fork.svg")]
-public partial class RoadFork : Node3D
+public partial class RoadFork : Node3D, IFoliageBuffered
 {
     private int _leftLanes = 1;
     private float _length = 10f;
@@ -97,6 +97,50 @@ public partial class RoadFork : Node3D
     /// <summary>How wide its shoulders are, along its outer edges; 0 for its trunk's.</summary>
     [Export(PropertyHint.Range, "0,5,0.05,suffix:m")]
     public float ShoulderWidth { get => _shoulderWidth; set { _shoulderWidth = Mathf.Max(value, 0f); QueueRebuild(); } }
+
+    /// <summary>Whether it has a foliage buffer of its own (see <see cref="FoliageBuffer"/>), not its network's.</summary>
+    [ExportGroup("Foliage")]
+    [Export]
+    public bool OwnFoliageBuffer
+    {
+        get => _ownFoliageBuffer;
+        set
+        {
+            _ownFoliageBuffer = value;
+            FoliageBufferChanged();
+        }
+    }
+
+    private bool _ownFoliageBuffer;
+
+    /// <summary>How far past its edges no foliage is painted, in metres (with Own Foliage Buffer on; else its network's).</summary>
+    [Export(PropertyHint.Range, "0,100,0.5,or_greater,suffix:m")]
+    public float FoliageBuffer
+    {
+        get => _foliageBuffer;
+        set
+        {
+            _foliageBuffer = Mathf.Max(0f, value);
+            FoliageBufferChanged();
+        }
+    }
+
+    private float _foliageBuffer;
+
+    /// <summary>How far past its edges no foliage is painted: its own, or its network's.</summary>
+    public float FoliageBufferUsed => _ownFoliageBuffer ? _foliageBuffer : Network?.FoliageBuffer ?? 0f;
+
+    /// <summary>Its buffer changed: told on (see RoadLinks.FootprintChanged), as where it lies is.</summary>
+    public void FoliageBufferChanged()
+    {
+        if (!IsInsideTree())
+            return;
+        // Not built since its scripts were reloaded (its outline forgotten): built again, which tells on where it lies.
+        if (Outline.Count < 3 || Network is not { } network)
+            QueueRebuild();
+        else
+            network.FootprintChanged(this, [RoadNetwork.Outline(Outline)]);
+    }
 
     /// <summary>Its banks, as its trunk's: how far down (up, if negative) they go, and how far out.</summary>
     public float BankHeight { get; private set; }
@@ -205,7 +249,8 @@ public partial class RoadFork : Node3D
             trunk.EffectiveSpeedLimit, string.Join(";", Shared.Select(n => trunk.Get(n).ToString())),
             string.Join(";", branches.Select(b => (b.GetInstanceId(), b.ForwardLanes, b.BackwardLanes,
                 b.Points is { Count: > 0 } p ? (splits ? p[0] : p[^1]).GlobalPosition : Vector3.Zero))));
-        if (key == _builtKey && _mesh is not null)
+        // (Built without an outline, it is built again: its foliage buffer and pillars' room go by it.)
+        if (key == _builtKey && _mesh is not null && Outline.Count >= 3)
             return;
         _builtKey = key;
 

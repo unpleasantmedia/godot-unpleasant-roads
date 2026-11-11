@@ -56,7 +56,7 @@ public enum RoadLampPosts
 [Tool]
 [GlobalClass]
 [Icon("res://addons/unpleasant_roads/Icons/Road.svg")]
-public partial class Road : Node3D
+public partial class Road : Node3D, IFoliageBuffered
 {
     /// <summary>
     /// Whether its saved settings have all been put back since it was made: false from when the

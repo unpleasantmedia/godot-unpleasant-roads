@@ -14,7 +14,7 @@ namespace UnpleasantMedia.UnpleasantRoads;
 [Tool]
 [GlobalClass]
 [Icon("res://addons/unpleasant_roads/Icons/Road-Junction.svg")]
-public partial class RoadJunction : Node3D
+public partial class RoadJunction : Node3D, IFoliageBuffered
 {
     /// <summary>
     /// Whether its saved settings have all been put back since it was made: false from when the
@@ -116,6 +116,50 @@ public partial class RoadJunction : Node3D
     /// road, an <see cref="ArmControl"/> by name (Priority for none); for a street name sign,
     /// Hidden. A slot not in it is left to the junction. Set by clicking its signs in the editor.
     /// </summary>
+    /// <summary>Whether it has a foliage buffer of its own (see <see cref="FoliageBuffer"/>), not its network's.</summary>
+    [ExportGroup("Foliage")]
+    [Export]
+    public bool OwnFoliageBuffer
+    {
+        get => _ownFoliageBuffer;
+        set
+        {
+            _ownFoliageBuffer = value;
+            FoliageBufferChanged();
+        }
+    }
+
+    private bool _ownFoliageBuffer;
+
+    /// <summary>How far past its edges no foliage is painted, in metres (with Own Foliage Buffer on; else its network's).</summary>
+    [Export(PropertyHint.Range, "0,100,0.5,or_greater,suffix:m")]
+    public float FoliageBuffer
+    {
+        get => _foliageBuffer;
+        set
+        {
+            _foliageBuffer = Mathf.Max(0f, value);
+            FoliageBufferChanged();
+        }
+    }
+
+    private float _foliageBuffer;
+
+    /// <summary>How far past its edges no foliage is painted: its own, or its network's.</summary>
+    public float FoliageBufferUsed => _ownFoliageBuffer ? _foliageBuffer : Network?.FoliageBuffer ?? 0f;
+
+    /// <summary>Its buffer changed: told on (see RoadLinks.FootprintChanged), as where it lies is.</summary>
+    public void FoliageBufferChanged()
+    {
+        if (!IsInsideTree())
+            return;
+        // Not built since its scripts were reloaded (its outline forgotten): built again, which tells on where it lies.
+        if (Shape?.Reach is { Count: >= 3 } outline)
+            RoadLinks.FootprintChanged?.Invoke(this, [RoadNetwork.Outline(outline)]);
+        else
+            QueueRebuild();
+    }
+
     [ExportGroup("Signs")]
     [Export]
     public Godot.Collections.Dictionary<string, string> SignChoices

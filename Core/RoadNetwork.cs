@@ -57,6 +57,8 @@ public partial class RoadNetwork : Node3D
             {
                 foreach (var road in Roads)
                     road.FoliageBufferChanged();
+                foreach (var part in FindChildren("*", "", true, false).OfType<IFoliageBuffered>().Where(p => p is not Road))
+                    part.FoliageBufferChanged();
             }
         }
     }
